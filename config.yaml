@@ -9,6 +9,33 @@ batch_size:
 squad_version:
   desc: squad dataset version (1 or 2)
   value: 1
+
+
+# image generation settings
 html_template:
   desc: template for generating an HTML file from a piece of text
   value: "pixel_block.html.jinja"
+image_resolution:
+  desc: DPI of the generated image
+  value: 92
+channel:
+  desc: format of the generated image
+  value: "GRAYSCALE"
+image_height:
+  desc: height of the image
+  value: 368
+image_width:
+  desc: width of the image
+  value: 368
+maximal_white_space_in_image:
+  desc: maximal allowed white margin at the bottom of the image
+  value: 68
+max_seq_length:
+  desc: maximal sequence length in tokens
+  value: 529
+min_paragraph_length:
+  desc: minimal length of text in paragraph, in characters
+  value: 200
+font_list_path:
+  desc: path to a csv containing a list of fonts to use
+  value: fonts/clean_fonts_with_size.csv

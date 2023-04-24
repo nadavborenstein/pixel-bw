@@ -24,6 +24,7 @@ from utils.utils import crop_image, concatenate_images, embed_image
 from torch.utils.data import IterableDataset, get_worker_info
 from dataclasses import dataclass
 import logging
+import torch
 
 logging.basicConfig(level=logging.INFO)
 
@@ -156,7 +157,7 @@ class ImageGenerator(object):
         template = self.config.html_template
         html_text = self._generate_html_text(template, style, text)
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
-        img_array = img_array[:self.config.image_heigh, :]
+        img_array = img_array[:self.config.image_height, :]
         return img_array
         
     def _crop_image(self, img):
@@ -188,9 +189,20 @@ class ImageGenerator(object):
         A method that concatenates two images vertically
         """
         concatenated = np.concatenate((self._crop_image(image1), self._crop_image(image2)), axis=0)
-        concatenated = concatenated[:self.config.image_heigh, :]
+        concatenated = concatenated[:self.config.image_height, :]
         return concatenated
     
+    def get_attention_mask(self, num_text_patches: int):
+        """
+        Creates an attention mask of size [1, seq_length]
+        The mask is 1 where there is text or a [SEP] black patch and 0 everywhere else
+        """
+        n = min(num_text_patches + 1, self.config.max_seq_length)  # Add 1 for [SEP] token (black patch)
+        zeros = torch.zeros(self.config.max_seq_length)
+        ones = torch.ones(n)
+        zeros[:n] = ones
+        return zeros
+
     def generate_random_mask(self, image_size):
         """
         Generate a random mask for the image.
@@ -240,9 +252,11 @@ class PretrainingDataset(IterableDataset):
         self.text_dataset = text_dataset
         self.rng = rng
         self.image_generator = ImageGenerator(config, rng)
-        
     
     def set_epoch(self, epoch):
+        """
+        A method that sets the epoch for the dataset
+        """
         info = get_worker_info()
         self.rng = np.random.RandomState(epoch + info.id if info else epoch)
         logging.info(f"randomizing dataset with worker id={info.id if info else 0} and epoch={epoch}")
@@ -277,7 +291,7 @@ class PretrainingDataset(IterableDataset):
         while True:
             snippet = self._get_random_snippet()
             image = self.image_generator.generate(snippet)
-            if self.image_generator.check_if_can_concatenate(image):  # TODO maybe add a probability to concatenate
+            while self.image_generator.check_if_can_concatenate(image):
                 snippet_2 = self._get_random_snippet(random_loc_within_paragraph=False)
                 image_2 = self.image_generator.generate(snippet_2)
                 image = self.image_generator.concatenate_images(image, image_2)
@@ -285,8 +299,8 @@ class PretrainingDataset(IterableDataset):
             if self.transform:
                 image = self.transform(image)
             
-            mask, patch_mask = self.generate_random_mask(image.shape[1:])
-            attention_mask = get_attention_mask(self.num_patches)
+            mask, patch_mask = self.image_generator.generate_random_mask(image.shape[1:])
+            attention_mask = self.image_generator.get_attention_mask(self.num_patches)
             inputs = {"pixel_values": image,
                       "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
                       "num_patches": self.num_patches,
@@ -294,3 +308,9 @@ class PretrainingDataset(IterableDataset):
 
             yield inputs
         
+
+if __name__ == "__main__":
+    config = wandb.init(config="config.yaml", mode="disabled")
+    text_dataset = load_dataset("wikipedia", "20220301.simple")
+    train_dataset = PretrainingDataset(config, text_dataset["train"], None, np.random.RandomState(42))
+    
