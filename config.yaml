@@ -14,10 +14,10 @@ squad_version:
 # image generation settings
 html_template:
   desc: template for generating an HTML file from a piece of text
-  value: "pixel_block.html.jinja"
+  value: "pretraining_block.html.jinja"
 image_resolution:
   desc: DPI of the generated image
-  value: 92
+  value: 96
 channel:
   desc: format of the generated image
   value: "GRAYSCALE"
@@ -39,3 +39,27 @@ min_paragraph_length:
 font_list_path:
   desc: path to a csv containing a list of fonts to use
   value: fonts/clean_fonts_with_size.csv
+max_snippet_length:
+  desc: number of characters to take from each text sample to generate a scan from
+  value: 20000
+mask_block_probability:
+  desc: ratio of patches to be masked
+  value: 0.25
+mask_block_size:
+  desc: size of each masked block, each made of patches of size patch_base_size
+  value: [32, 16]
+mask_max_merged_blocks_size:
+  desc: maximum number of masked blocks merged together on each axis
+  value: [2, 6]
+mask_min_merged_blocks_size:
+  desc: minimum number of masked blocks merged together on each axis
+  value: [1, 2]
+patch_base_size:
+  desc: size in pixels of each patch
+  value: [16, 16]
+num_patches: 
+  desc: number of patches in each scan
+  value: 529
+random_font_probability:
+  desc: probability to replace font mid scan
+  value: 0.5

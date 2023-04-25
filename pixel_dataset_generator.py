@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw as D
 
 from datasets import load_dataset, Dataset
 import fuzzysearch
+from albumentations.pytorch import ToTensorV2
 
 from typing import List, Tuple, Dict, Callable, Optional
 import numpy as np
@@ -40,6 +41,16 @@ class CustomFont:
     
     def __str__(self) -> str:
         return f"Name: {self.font_name}\nSize: {self.file_name}\nPath: {self.font_size}"
+
+    def __getitem__(self, key: str) -> str:
+        if key == "file_name":
+            return self.file_name
+        elif key == "font_name":
+            return self.font_name
+        elif key == "font_size":
+            return self.font_size
+        else:
+            raise KeyError(f"Invalid key {key}")
 
 
 class ImageGenerator(object):
@@ -87,12 +98,12 @@ class ImageGenerator(object):
         """
         A method that returns a random custom font from the font list
         """
-        random_index = self.rng.integers(0, self.font_list.shape[0])
+        random_index = self.rng.randint(0, self.font_list.shape[0])
         random_font = self.font_list["path"][random_index]
         font_name = random_font.split(".")[0].split("/")[1]
 
         font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 2) + self.rng.integers(-4, 5, 1)[0]
+        font_size = int(font_size / 2) + self.rng.randint(-4, 5, 1)[0]
         
         custom_font = CustomFont(file_name=random_font,
                                  font_name=font_name.title(),
@@ -158,7 +169,7 @@ class ImageGenerator(object):
         html_text = self._generate_html_text(template, style, text)
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
         img_array = img_array[:self.config.image_height, :]
-        return img_array
+        return img_array, font
         
     def _crop_image(self, img):
         """
@@ -182,13 +193,13 @@ class ImageGenerator(object):
         non_white_pixels = np.argwhere(img < 255)
         # Find the minimum and maximum indices in each dimension.
         max_indices = non_white_pixels.max(axis=0)
-        return self.config.image_heigh - max_indices[0] > self.config.maximal_white_space_in_image
+        return self.config.image_height - max_indices[0] > self.config.maximal_white_space_in_image
     
     def concatenate_images(self, image1, image2):
         """
         A method that concatenates two images vertically
         """
-        concatenated = np.concatenate((self._crop_image(image1), self._crop_image(image2)), axis=0)
+        concatenated = np.concatenate((self._crop_image(image1), image2), axis=0)
         concatenated = concatenated[:self.config.image_height, :]
         return concatenated
     
@@ -209,15 +220,15 @@ class ImageGenerator(object):
         """
         mask = np.zeros(image_size)
         pixels_masked = 0
-        while (pixels_masked / (image_size[0] * image_size[1])) < self.args.mask_block_probability:
-            patch_height = self.rng.randint(self.args.mask_min_merged_blocks_size[0],
-                                             self.args.mask_max_merged_blocks_size[0] + 1) * self.args.mask_block_size[0]
-            patch_width = self.rng.randint(self.args.mask_min_merged_blocks_size[1],
-                                            self.args.mask_max_merged_blocks_size[1] + 1) * self.args.mask_block_size[1]
+        while (pixels_masked / (image_size[0] * image_size[1])) < self.config.mask_block_probability:
+            patch_height = self.rng.randint(self.config.mask_min_merged_blocks_size[0],
+                                             self.config.mask_max_merged_blocks_size[0] + 1) * self.config.mask_block_size[0]
+            patch_width = self.rng.randint(self.config.mask_min_merged_blocks_size[1],
+                                            self.config.mask_max_merged_blocks_size[1] + 1) * self.config.mask_block_size[1]
 
             for i in range(10):
-                random_mask_location_x = self.rng.choice(np.arange(0, image_size[0] - patch_height, self.args.mask_block_size[0]))
-                random_mask_location_y = self.rng.choice(np.arange(0, image_size[1] - patch_width, self.args.mask_block_size[1]))
+                random_mask_location_x = self.rng.choice(np.arange(0, image_size[0] - patch_height, self.config.mask_block_size[0]))
+                random_mask_location_y = self.rng.choice(np.arange(0, image_size[1] - patch_width, self.config.mask_block_size[1]))
 
                 slice = mask[random_mask_location_x: random_mask_location_x + patch_height,
                         random_mask_location_y:  random_mask_location_y + patch_width]
@@ -230,7 +241,7 @@ class ImageGenerator(object):
                     pixels_masked += patch_height * patch_width
                     break
 
-        small_mask = mask[::self.args.patch_base_size[0], ::self.args.patch_base_size[1]].flatten()
+        small_mask = mask[::self.config.patch_base_size[0], ::self.config.patch_base_size[1]].flatten()
         return mask, small_mask
 
 
@@ -248,7 +259,11 @@ class PretrainingDataset(IterableDataset):
         """
         super().__init__()
         self.config = config
-        self.transform = transform
+        if transform:
+            self.transform = transform
+        else:
+            tensor_transform = ToTensorV2()
+            self.transform =  lambda x: tensor_transform(image=x)['image']
         self.text_dataset = text_dataset
         self.rng = rng
         self.image_generator = ImageGenerator(config, rng)
@@ -267,7 +282,7 @@ class PretrainingDataset(IterableDataset):
         :param paragraphs: list of paragraphs
         :return: list of cleaned paragraphs
         """
-        paragraphs = [p.trim() for p in paragraphs ]
+        paragraphs = [p.strip() for p in paragraphs ]
         paragraphs = [p for p in paragraphs if len(p) > self.config.min_paragraph_length]  # TODO add to config file
         return paragraphs
     
@@ -276,41 +291,54 @@ class PretrainingDataset(IterableDataset):
         A method that returns a random snippet from a random paragraph in a random document
         :param random_loc_within_paragraph: whether to return a random location within the paragraph or the beginning
         """
-        doc_index = self.rng.randint(0, len(self.text_dataset))
-        doc = self.text_dataset[doc_index]["text"]
-        paragraphs = doc.split("\n")
-        paragraphs = self._clean_paragraphs(paragraphs)
+        paragraphs = []
+        while len(paragraphs) == 0:
+            doc_index = self.rng.randint(0, len(self.text_dataset))
+            doc = self.text_dataset[doc_index]["text"]
+            paragraphs = doc.split("\n")
+            paragraphs = self._clean_paragraphs(paragraphs)
+        
+        assert len(paragraphs) > 0, f"no paragraphs"
         
         paragraph_index = self.rng.randint(0, len(paragraphs))
         paragraph = paragraphs[paragraph_index]
         
-        random_loc = self.rng.randint(0, len(paragraph)) if random_loc_within_paragraph else 0
+        random_loc = self.rng.randint(0, len(paragraph) - self.config.min_paragraph_length) if random_loc_within_paragraph else 0
         return paragraph[random_loc:self.config.max_snippet_length]  # TODO add to config file
     
     def __iter__(self):
         while True:
             snippet = self._get_random_snippet()
-            image = self.image_generator.generate(snippet)
+            image, font = self.image_generator.generate(snippet)
             while self.image_generator.check_if_can_concatenate(image):
+                if self.rng.rand() > self.config.random_font_probability:
+                    font = None
                 snippet_2 = self._get_random_snippet(random_loc_within_paragraph=False)
-                image_2 = self.image_generator.generate(snippet_2)
+                image_2, font = self.image_generator.generate(snippet_2, font)
                 image = self.image_generator.concatenate_images(image, image_2)
-                
+            
             if self.transform:
                 image = self.transform(image)
             
             mask, patch_mask = self.image_generator.generate_random_mask(image.shape[1:])
-            attention_mask = self.image_generator.get_attention_mask(self.num_patches)
+            attention_mask = self.image_generator.get_attention_mask(self.config.num_patches)
             inputs = {"pixel_values": image,
                       "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
-                      "num_patches": self.num_patches,
+                      "num_patches": self.config.num_patches,
                       "attention_mask": attention_mask}
 
             yield inputs
         
 
 if __name__ == "__main__":
-    config = wandb.init(config="config.yaml", mode="disabled")
+    wandb.init(config="config.yaml", mode="disabled")
     text_dataset = load_dataset("wikipedia", "20220301.simple")
-    train_dataset = PretrainingDataset(config, text_dataset["train"], None, np.random.RandomState(42))
+    train_dataset = PretrainingDataset(wandb.config, text_dataset["train"], None, np.random.RandomState(1))
+    for i in range(1):
+        train_dataset.set_epoch(i)
+        for batch in train_dataset:
+            im = Image.fromarray(batch["pixel_values"].numpy()[0])
+            im.save("results/sample.png")
+            break
+        break
     

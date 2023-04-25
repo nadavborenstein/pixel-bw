@@ -9,8 +9,8 @@
 
 {% macro load_font(font_name, font_family) -%}
     @font-face {
-        font-family: "{{ font_family }}";
-        src: url("../data/fonts/{{ font_name }}");
+        font-family: {{ font_family }};
+        src: url(fonts/{{ font_name }});
     }
 {% endmacro %}
 
@@ -53,9 +53,9 @@
 {% endmacro %}
 
 {% macro set_pretraining_text_style(font_family, font_size, line_height, word_break, line_break) -%}
-    div.context {
-        font-family: "{{ font_family }}";
-        font-size: "{{ font_size }}";
+    div.pretraining_text {
+        font-family: {{ font_family }};
+        font-size: {{ font_size }};
         {% if line_height %}
             line-height: {{ line_height }};
         {% endif %}
