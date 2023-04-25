@@ -71,12 +71,17 @@ class SyntheticDatasetTransform(object):
         """
         background = image.copy()
         background = cv2.flip(background, 1)  # flipped horizontally
-        background = translation(background, self.rng.randint(self.args.max_bleed_offset), self.rng.randint(self.args.max_bleed_offset))
-        alpha = self.rng.normal(self.args.bleed_alpha, self.args.bleed_alpha_std)
+        background = translation(
+            background,
+            self.rng.randint(self.args.max_bleed_offset),
+            self.rng.randint(self.args.max_bleed_offset),
+        )
+        alpha = self.rng.normal(self.args.bleed_alpha_mean, self.args.bleed_alpha_std)
+        alpha = max(0, min(1, alpha))
         beta = 1 - alpha
-    
-        return overlay_weighted(image, background, self.args.bleed_alpha, beta, self.args.bleed_gamma)
-        
+
+        return overlay_weighted(image, background, alpha, beta, self.args.bleed_gamma)
+
     def add_random_horizontal_line(self, image: np.ndarray, **kwargs) -> np.ndarray:
         """
         Add a random horizontal line to the image.
@@ -239,9 +244,9 @@ class SyntheticDatasetTransform(object):
         """
         Add noise to the channels of the image, to make sure that it's not completely grayscale.
         """
-        noise = self.rng.normal(0, self.args.channel_noise_std, size=(1, 1, 3))
+        noise = self.rng.normal(0, self.args.channel_noise_std * 255, size=(1, 1, 3))
         image = image + noise
-        image = np.clip(image, 0, 1).astype("float32")
+        image = np.clip(image, 0, 255).astype("float32")
         return image
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
@@ -254,6 +259,10 @@ class SyntheticDatasetTransform(object):
                 A.Lambda(
                     image=self.add_random_vertical_line,
                     p=self.args.random_line_vertical_probability,
+                ),
+                A.Lambda(
+                    image=self.add_bleed_through,
+                    p=self.args.bleed_through_probability,
                 ),
                 A.OneOf(
                     [
@@ -338,7 +347,7 @@ class SyntheticDatasetTransform(object):
                 ),
                 A.Rotate(
                     limit=self.args.rotation_max_degrees,
-                    p=self.args.rotation_max_degrees,
+                    p=self.args.rotation_probability,
                 ),
                 A.Lambda(image=self.to_rgb),
                 A.Compose(

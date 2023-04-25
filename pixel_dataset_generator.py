@@ -31,8 +31,6 @@ from dataset_transformations import SyntheticDatasetTransform
 logging.basicConfig(level=logging.INFO)
 
 
-
-
 @dataclass
 class CustomFont:
     """
@@ -44,7 +42,7 @@ class CustomFont:
     font_size: int
 
     def __str__(self) -> str:
-        return f"Name: {self.font_name}\nSize: {self.file_name}\nPath: {self.font_size}"
+        return f"Name: {self.font_name}\nSize: {self.font_size}\nPath: {self.file_name}"
 
     def __getitem__(self, key: str) -> str:
         if key == "file_name":
@@ -105,10 +103,11 @@ class ImageGenerator(object):
         """
         random_index = self.rng.randint(0, self.font_list.shape[0])
         random_font = self.font_list["path"][random_index]
+        random_font = random_font.replace(" ", "_")  # fixing spaces in the path
         font_name = random_font.split(".")[0].split("/")[1]
 
         font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 2) + self.rng.randint(-4, 5, 1)[0]
+        font_size = int(font_size / 1.5) + self.rng.randint(-4, 5, 1)[0]
 
         custom_font = CustomFont(
             file_name=random_font, font_name=font_name.title(), font_size=font_size
@@ -167,6 +166,19 @@ class ImageGenerator(object):
                 f"Invalid channel code {channel}. Valid values are: {valid_channels}."
             )
 
+    def _remove_leading_whitespace(self, img_array: np.ndarray) -> np.ndarray:
+        non_white_pixels = np.argwhere(img_array < 255)
+        min_indices = non_white_pixels.min(axis=0)
+        img_array = img_array[min_indices[0] - 2 :, :]
+        img_array = np.concatenate(
+            [
+                img_array,
+                np.full((min_indices[0] - 2, *img_array.shape[1:]), 255, dtype="uint8"),
+            ],
+            axis=0,
+        )
+        return img_array
+
     def generate(self, text, font: CustomFont = None):
         """
         Generate an image from the given text and font
@@ -179,6 +191,7 @@ class ImageGenerator(object):
         template = self.config.html_template
         html_text = self._generate_html_text(template, style, text)
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        img_array = self._remove_leading_whitespace(img_array)
         img_array = img_array[: self.config.image_height, :]
         return img_array, font
 
@@ -390,16 +403,28 @@ class PretrainingDataset(IterableDataset):
             yield inputs
 
 
-if __name__ == "__main__":
+def main():
     wandb.init(config="config.yaml", mode="disabled")
+    rng = np.random.RandomState(2)
     text_dataset = load_dataset("wikipedia", "20220301.simple")
+
+    transform = SyntheticDatasetTransform(wandb.config, rng=rng)
     train_dataset = PretrainingDataset(
-        wandb.config, text_dataset["train"], None, np.random.RandomState(1)
+        wandb.config, text_dataset["train"], transform, rng=rng
     )
-    for i in range(100):
+    for i in range(10):
         train_dataset.set_epoch(i)
         for batch in train_dataset:
-            im = Image.fromarray(batch["pixel_values"].numpy()[0])
-            im.save("results/sample.png")
+            im = Image.fromarray(
+                batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
+            )
             break
-        break
+
+    im.save("results/sample.png")
+
+
+if __name__ == "__main__":
+    main()
+    import cProfile
+
+    cProfile.run("main()", sort=1)
