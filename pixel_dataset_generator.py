@@ -26,8 +26,11 @@ from torch.utils.data import IterableDataset, get_worker_info
 from dataclasses import dataclass
 import logging
 import torch
+from dataset_transformations import SyntheticDatasetTransform
 
 logging.basicConfig(level=logging.INFO)
+
+
 
 
 @dataclass
@@ -35,10 +38,11 @@ class CustomFont:
     """
     A class to represent a custom font
     """
+
     file_name: str
     font_name: str
     font_size: int
-    
+
     def __str__(self) -> str:
         return f"Name: {self.font_name}\nSize: {self.file_name}\nPath: {self.font_size}"
 
@@ -71,6 +75,7 @@ class ImageGenerator(object):
         "line_break": None,
         "line_height_pretraining": None,
     }
+
     def __init__(self, config: Config, rng: np.random.RandomState) -> None:
         """
         :param config: The wandb config
@@ -88,12 +93,12 @@ class ImageGenerator(object):
         style["custom_fonts"] = custom_fonts
         style["font_family_pretraining"] = custom_fonts[0].font_name
         style["font_size_pretraining"] = f"{custom_fonts[0].font_size}px"
-        
+
         for key in style:
             if key in wandb.config:
                 style[key] = [wandb.config[key]]
         return style
-    
+
     def _get_random_custom_font(self) -> CustomFont:
         """
         A method that returns a random custom font from the font list
@@ -104,35 +109,41 @@ class ImageGenerator(object):
 
         font_size = self.font_list["base_size"][random_index]
         font_size = int(font_size / 2) + self.rng.randint(-4, 5, 1)[0]
-        
-        custom_font = CustomFont(file_name=random_font,
-                                 font_name=font_name.title(),
-                                 font_size=font_size)
-        
+
+        custom_font = CustomFont(
+            file_name=random_font, font_name=font_name.title(), font_size=font_size
+        )
+
         return custom_font
 
-    def _generate_html_text(self, template: str, style: Dict, pretraining_text: str) -> str:
-        env = Environment(loader=FileSystemLoader("./templates/"), 
-                    autoescape=select_autoescape(["html", "xml"]))
+    def _generate_html_text(
+        self, template: str, style: Dict, pretraining_text: str
+    ) -> str:
+        env = Environment(
+            loader=FileSystemLoader("./templates/"),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
         template = env.get_template(template)
         html_text = template.render(pretraining_text=pretraining_text, **style)
         return html_text
-    
-    def _render_html_as_image(self, html_text: str, channel: str = 'GRAYSCALE'):
+
+    def _render_html_as_image(self, html_text: str, channel: str = "GRAYSCALE"):
         """
         A function to render an HTML text as an image
         """
         font_config = FontConfiguration()  # TODO define once outside the function
-        html=HTML(string=html_text, base_url=".")
+        html = HTML(string=html_text, base_url=".")
         doc = html.render(font_config=font_config)
-        surface, width, height = doc.write_image_surface(resolution=self.config.image_resolution)
+        surface, width, height = doc.write_image_surface(
+            resolution=self.config.image_resolution
+        )
         img_format = surface.get_format()
 
         # This is BGRA channel in little endian (reverse)
         if img_format != FORMAT_ARGB32:
             raise RuntimeError(
-                f"Expect surface format to be 'cairocffi.FORMAT_ARGB32', but got {img_format}." +
-                "Please check the underlining implementation of 'weasyprint.document.Document.write_image_surface()'"
+                f"Expect surface format to be 'cairocffi.FORMAT_ARGB32', but got {img_format}."
+                + "Please check the underlining implementation of 'weasyprint.document.Document.write_image_surface()'"
             )
 
         img_buffer = surface.get_data()
@@ -141,7 +152,7 @@ class ImageGenerator(object):
             shape=(height, width, 4), dtype=np.uint8, buffer=img_buffer
         )
         if channel == "GRAYSCALE":
-                return cv2.cvtColor(img_array, cv2.COLOR_BGRA2GRAY)
+            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2GRAY)
         elif channel == "RGBA":
             return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGBA)
         elif channel == "RGB":
@@ -154,8 +165,8 @@ class ImageGenerator(object):
             valid_channels = ["GRAYSCALE", "RGB", "RGBA", "BGR", "BGRA"]
             raise ValueError(
                 f"Invalid channel code {channel}. Valid values are: {valid_channels}."
-            )  
-        
+            )
+
     def generate(self, text, font: CustomFont = None):
         """
         Generate an image from the given text and font
@@ -168,9 +179,9 @@ class ImageGenerator(object):
         template = self.config.html_template
         html_text = self._generate_html_text(template, style, text)
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
-        img_array = img_array[:self.config.image_height, :]
+        img_array = img_array[: self.config.image_height, :]
         return img_array, font
-        
+
     def _crop_image(self, img):
         """
         Crops an image to the smallest possible size containing all non-white pixels.
@@ -186,29 +197,34 @@ class ImageGenerator(object):
         max_indices = non_white_pixels.max(axis=0)
 
         # Crop the image to the smallest possible size containing all non-white pixels.
-        cropped_img = img[:max_indices[0]+2, :]
+        cropped_img = img[: max_indices[0] + 2, :]
         return cropped_img
-        
+
     def check_if_can_concatenate(self, img):
         non_white_pixels = np.argwhere(img < 255)
         # Find the minimum and maximum indices in each dimension.
         max_indices = non_white_pixels.max(axis=0)
-        return self.config.image_height - max_indices[0] > self.config.maximal_white_space_in_image
-    
+        return (
+            self.config.image_height - max_indices[0]
+            > self.config.maximal_white_space_in_image
+        )
+
     def concatenate_images(self, image1, image2):
         """
         A method that concatenates two images vertically
         """
         concatenated = np.concatenate((self._crop_image(image1), image2), axis=0)
-        concatenated = concatenated[:self.config.image_height, :]
+        concatenated = concatenated[: self.config.image_height, :]
         return concatenated
-    
+
     def get_attention_mask(self, num_text_patches: int):
         """
         Creates an attention mask of size [1, seq_length]
         The mask is 1 where there is text or a [SEP] black patch and 0 everywhere else
         """
-        n = min(num_text_patches + 1, self.config.max_seq_length)  # Add 1 for [SEP] token (black patch)
+        n = min(
+            num_text_patches + 1, self.config.max_seq_length
+        )  # Add 1 for [SEP] token (black patch)
         zeros = torch.zeros(self.config.max_seq_length)
         ones = torch.ones(n)
         zeros[:n] = ones
@@ -220,37 +236,65 @@ class ImageGenerator(object):
         """
         mask = np.zeros(image_size)
         pixels_masked = 0
-        while (pixels_masked / (image_size[0] * image_size[1])) < self.config.mask_block_probability:
-            patch_height = self.rng.randint(self.config.mask_min_merged_blocks_size[0],
-                                             self.config.mask_max_merged_blocks_size[0] + 1) * self.config.mask_block_size[0]
-            patch_width = self.rng.randint(self.config.mask_min_merged_blocks_size[1],
-                                            self.config.mask_max_merged_blocks_size[1] + 1) * self.config.mask_block_size[1]
+        while (
+            pixels_masked / (image_size[0] * image_size[1])
+        ) < self.config.mask_block_probability:
+            patch_height = (
+                self.rng.randint(
+                    self.config.mask_min_merged_blocks_size[0],
+                    self.config.mask_max_merged_blocks_size[0] + 1,
+                )
+                * self.config.mask_block_size[0]
+            )
+            patch_width = (
+                self.rng.randint(
+                    self.config.mask_min_merged_blocks_size[1],
+                    self.config.mask_max_merged_blocks_size[1] + 1,
+                )
+                * self.config.mask_block_size[1]
+            )
 
             for i in range(10):
-                random_mask_location_x = self.rng.choice(np.arange(0, image_size[0] - patch_height, self.config.mask_block_size[0]))
-                random_mask_location_y = self.rng.choice(np.arange(0, image_size[1] - patch_width, self.config.mask_block_size[1]))
+                random_mask_location_x = self.rng.choice(
+                    np.arange(
+                        0, image_size[0] - patch_height, self.config.mask_block_size[0]
+                    )
+                )
+                random_mask_location_y = self.rng.choice(
+                    np.arange(
+                        0, image_size[1] - patch_width, self.config.mask_block_size[1]
+                    )
+                )
 
-                slice = mask[random_mask_location_x: random_mask_location_x + patch_height,
-                        random_mask_location_y:  random_mask_location_y + patch_width]
+                slice = mask[
+                    random_mask_location_x : random_mask_location_x + patch_height,
+                    random_mask_location_y : random_mask_location_y + patch_width,
+                ]
                 if np.sum(slice) > 0:
                     continue
                 else:
-                    mask[random_mask_location_x: random_mask_location_x + patch_height,
-                    random_mask_location_y:  random_mask_location_y + patch_width] = 1
+                    mask[
+                        random_mask_location_x : random_mask_location_x + patch_height,
+                        random_mask_location_y : random_mask_location_y + patch_width,
+                    ] = 1
 
                     pixels_masked += patch_height * patch_width
                     break
 
-        small_mask = mask[::self.config.patch_base_size[0], ::self.config.patch_base_size[1]].flatten()
+        small_mask = mask[
+            :: self.config.patch_base_size[0], :: self.config.patch_base_size[1]
+        ].flatten()
         return mask, small_mask
 
 
 class PretrainingDataset(IterableDataset):
-    
-    def __init__(self, config: Config,
-                 text_dataset: Dataset,
-                 transform: Optional[Callable],
-                 rng: np.random.RandomState) -> None:
+    def __init__(
+        self,
+        config: Config,
+        text_dataset: Dataset,
+        transform: Optional[Callable],
+        rng: np.random.RandomState,
+    ) -> None:
         """
         :param config: Config object, wandb.config
         :param text_dataset: textual dataset, made out of (long) strings
@@ -263,29 +307,33 @@ class PretrainingDataset(IterableDataset):
             self.transform = transform
         else:
             tensor_transform = ToTensorV2()
-            self.transform =  lambda x: tensor_transform(image=x)['image']
+            self.transform = lambda x: tensor_transform(image=x)["image"]
         self.text_dataset = text_dataset
         self.rng = rng
         self.image_generator = ImageGenerator(config, rng)
-    
+
     def set_epoch(self, epoch):
         """
         A method that sets the epoch for the dataset
         """
         info = get_worker_info()
         self.rng = np.random.RandomState(epoch + info.id if info else epoch)
-        logging.info(f"randomizing dataset with worker id={info.id if info else 0} and epoch={epoch}")
-    
+        logging.info(
+            f"randomizing dataset with worker id={info.id if info else 0} and epoch={epoch}"
+        )
+
     def _clean_paragraphs(self, paragraphs: List[str]) -> List[str]:
         """
         Removes empty paragraphs and paragraphs that are too short
         :param paragraphs: list of paragraphs
         :return: list of cleaned paragraphs
         """
-        paragraphs = [p.strip() for p in paragraphs ]
-        paragraphs = [p for p in paragraphs if len(p) > self.config.min_paragraph_length]  # TODO add to config file
+        paragraphs = [p.strip() for p in paragraphs]
+        paragraphs = [
+            p for p in paragraphs if len(p) > self.config.min_paragraph_length
+        ]  # TODO add to config file
         return paragraphs
-    
+
     def _get_random_snippet(self, random_loc_within_paragraph: bool = True) -> str:
         """
         A method that returns a random snippet from a random paragraph in a random document
@@ -297,15 +345,21 @@ class PretrainingDataset(IterableDataset):
             doc = self.text_dataset[doc_index]["text"]
             paragraphs = doc.split("\n")
             paragraphs = self._clean_paragraphs(paragraphs)
-        
+
         assert len(paragraphs) > 0, f"no paragraphs"
-        
+
         paragraph_index = self.rng.randint(0, len(paragraphs))
         paragraph = paragraphs[paragraph_index]
-        
-        random_loc = self.rng.randint(0, len(paragraph) - self.config.min_paragraph_length) if random_loc_within_paragraph else 0
-        return paragraph[random_loc:self.config.max_snippet_length]  # TODO add to config file
-    
+
+        random_loc = (
+            self.rng.randint(0, len(paragraph) - self.config.min_paragraph_length)
+            if random_loc_within_paragraph
+            else 0
+        )
+        return paragraph[
+            random_loc : self.config.max_snippet_length
+        ]  # TODO add to config file
+
     def __iter__(self):
         while True:
             snippet = self._get_random_snippet()
@@ -316,29 +370,36 @@ class PretrainingDataset(IterableDataset):
                 snippet_2 = self._get_random_snippet(random_loc_within_paragraph=False)
                 image_2, font = self.image_generator.generate(snippet_2, font)
                 image = self.image_generator.concatenate_images(image, image_2)
-            
+
             if self.transform:
                 image = self.transform(image)
-            
-            mask, patch_mask = self.image_generator.generate_random_mask(image.shape[1:])
-            attention_mask = self.image_generator.get_attention_mask(self.config.num_patches)
-            inputs = {"pixel_values": image,
-                      "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
-                      "num_patches": self.config.num_patches,
-                      "attention_mask": attention_mask}
+
+            mask, patch_mask = self.image_generator.generate_random_mask(
+                image.shape[1:]
+            )
+            attention_mask = self.image_generator.get_attention_mask(
+                self.config.num_patches
+            )
+            inputs = {
+                "pixel_values": image,
+                "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
+                "num_patches": self.config.num_patches,
+                "attention_mask": attention_mask,
+            }
 
             yield inputs
-        
+
 
 if __name__ == "__main__":
     wandb.init(config="config.yaml", mode="disabled")
     text_dataset = load_dataset("wikipedia", "20220301.simple")
-    train_dataset = PretrainingDataset(wandb.config, text_dataset["train"], None, np.random.RandomState(1))
-    for i in range(1):
+    train_dataset = PretrainingDataset(
+        wandb.config, text_dataset["train"], None, np.random.RandomState(1)
+    )
+    for i in range(100):
         train_dataset.set_epoch(i)
         for batch in train_dataset:
             im = Image.fromarray(batch["pixel_values"].numpy()[0])
             im.save("results/sample.png")
             break
         break
-    

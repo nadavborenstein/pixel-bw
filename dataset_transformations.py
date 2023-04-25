@@ -1,24 +1,82 @@
-import logging
-
-import datasets
-import torch
-from torch.utils.data import Dataset
 import numpy as np
-from sklearn.datasets import make_blobs
-from dataset_synthesis.document_syntesis import DocumentSynthesizer
 import albumentations as A
 from PIL import Image
 from albumentations.pytorch import ToTensorV2
-from pixel.utils.misc import get_attention_mask
-import pickle
-import os
+from sklearn.datasets import make_blobs
+from wandb.sdk.wandb_config import Config
+import cv2
+
+
+def overlay_weighted(src, background, alpha, beta, gamma=0):
+    """overlay two images together, pixels from each image is weighted as follow
+
+        dst[i] = alpha*src[i] + beta*background[i] + gamma
+
+    Arguments:
+        src (numpy.ndarray) : source image of shape (rows, cols)
+        background (numpy.ndarray) : background image. Must be in same shape are `src`
+        alpha (float) : transparent factor for the foreground
+        beta (float) : transparent factor for the background
+        gamma (int, optional) : luminance constant. Defaults to 0.
+
+    Returns:
+        numpy.ndarray: a copy of the source image after apply the effect
+    """
+    return cv2.addWeighted(src, alpha, background, beta, gamma).astype(np.uint8)
+
+
+def overlay(src, background):
+    """Overlay two images together via bitwise-and:
+
+        dst[i] = src[i] & background[i]
+
+    Arguments:
+        src (numpy.ndarray) : source image of shape (rows, cols)
+        background (numpy.ndarray) : background image. Must be in same shape are `src`
+
+    Returns:
+        numpy.ndarray: a copy of the source image after apply the effect
+    """
+    return cv2.bitwise_and(src, background).astype(np.uint8)
+
+
+def translation(src, offset_x, offset_y):
+    """Shift the image in x, y direction
+
+    Arguments:
+        src (numpy.ndarray) : source image of shape (rows, cols)
+        offset_x (int) : pixels in the x direction.
+                          Positive value shifts right and negative shifts right.
+        offset_y (int) : pixels in the y direction.
+                          Positive value shifts down and negative shifts up.
+
+    Returns:
+        numpy.ndarray: a copy of the source image after apply the effect
+    """
+    rows, cols = src.shape
+    trans_matrix = np.float32([[1, 0, offset_x], [0, 1, offset_y]])
+    # size of the output image should be in the form of (width, height)
+    dst = cv2.warpAffine(src, trans_matrix, (cols, rows), borderValue=255)
+    return dst.astype(np.uint8)
 
 
 class SyntheticDatasetTransform(object):
-    def __init__(self, args, rng):
+    def __init__(self, args: Config, rng: np.random.RandomState):
         self.args = args
         self.rng = rng
 
+    def add_bleed_through(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Adds bleed through effect to the image. Background is flipped horizontally
+        """
+        background = image.copy()
+        background = cv2.flip(background, 1)  # flipped horizontally
+        background = translation(background, self.rng.randint(self.args.max_bleed_offset), self.rng.randint(self.args.max_bleed_offset))
+        alpha = self.rng.normal(self.args.bleed_alpha, self.args.bleed_alpha_std)
+        beta = 1 - alpha
+    
+        return overlay_weighted(image, background, self.args.bleed_alpha, beta, self.args.bleed_gamma)
+        
     def add_random_horizontal_line(self, image: np.ndarray, **kwargs) -> np.ndarray:
         """
         Add a random horizontal line to the image.
@@ -302,199 +360,3 @@ class SyntheticDatasetTransform(object):
 
         image = transformation(image=image)["image"]
         return image
-
-
-class SyntheticDatasetTorch(Dataset):
-    """
-    Synthetic Dataset for torchvision.
-    """
-
-    def __init__(
-        self,
-        text_dataset: datasets.Dataset,
-        transform=None,
-        args=None,
-        document_synthesizer=DocumentSynthesizer,
-        overfit=False,
-        rng: np.random.RandomState = None,
-    ):
-        """
-        Args:
-            data_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.text_dataset = text_dataset.shuffle(rng.randint(0, 2**32 - 1))
-        self.transform = transform
-        self.args = args
-        self.ds = document_synthesizer
-        self.overfit_examples = [] if overfit else None
-        self.eval_dataset = []
-
-        self.warmup = False
-        self.num_patches = 529  # TODO add this as an argument
-        self.rng = rng
-
-    def set_epoch(self, epoch):
-        info = torch.utils.data.get_worker_info()
-        self.rng = np.random.RandomState(epoch + info.id if info else epoch)
-        logging.info(
-            f"randomizing dataset with worker id={info.id if info else 0} and epoch={epoch}"
-        )
-
-    def generate_random_mask(self, image_size):
-        """
-        Generate a random mask for the image.
-        """
-        mask = np.zeros(image_size)
-        pixels_masked = 0
-        while (
-            pixels_masked / (image_size[0] * image_size[1])
-        ) < self.args.mask_block_probability:
-            patch_height = (
-                self.rng.randint(
-                    self.args.mask_min_merged_blocks_size[0],
-                    self.args.mask_max_merged_blocks_size[0] + 1,
-                )
-                * self.args.mask_block_size[0]
-            )
-            patch_width = (
-                self.rng.randint(
-                    self.args.mask_min_merged_blocks_size[1],
-                    self.args.mask_max_merged_blocks_size[1] + 1,
-                )
-                * self.args.mask_block_size[1]
-            )
-
-            for i in range(10):
-                random_mask_location_x = self.rng.choice(
-                    np.arange(
-                        0, image_size[0] - patch_height, self.args.mask_block_size[0]
-                    )
-                )
-                random_mask_location_y = self.rng.choice(
-                    np.arange(
-                        0, image_size[1] - patch_width, self.args.mask_block_size[1]
-                    )
-                )
-
-                slice = mask[
-                    random_mask_location_x : random_mask_location_x + patch_height,
-                    random_mask_location_y : random_mask_location_y + patch_width,
-                ]
-                if np.sum(slice) > 0:
-                    continue
-                else:
-                    mask[
-                        random_mask_location_x : random_mask_location_x + patch_height,
-                        random_mask_location_y : random_mask_location_y + patch_width,
-                    ] = 1
-
-                    pixels_masked += patch_height * patch_width
-                    break
-
-        small_mask = mask[
-            :: self.args.patch_base_size[0], :: self.args.patch_base_size[1]
-        ].flatten()
-        return mask, small_mask
-
-    def render_string(self, text):
-        """
-        Render a string to an image.
-        """
-        font, font_size, spacing = self.ds.get_random_font()
-        image = self.ds.generate_base_image(text, font, spacing)
-        if self.transform:
-            image = self.transform(image)
-        mask, patch_mask = self.generate_random_mask(image.shape[1:])
-        attention_mask = get_attention_mask(self.num_patches)
-        return {
-            "pixel_values": image,
-            "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
-            "num_patches": self.num_patches,
-            "attention_mask": attention_mask,
-        }
-
-    def get_evaluation_set(self):
-        """
-        Generate a set of examples for evaluation.
-        """
-        if self.overfit_examples is not None:
-            for i in range(10):
-                example = self[i]
-                self.eval_dataset.append(example)
-        else:
-            print(os.getcwd())
-            self.eval_dataset = pickle.load(
-                open("/home/knf792/PycharmProjects/pixel/test_data/develop_set.p", "rb")
-            )
-        return self.eval_dataset
-
-    def __len__(self):
-        return len(self.text_dataset)
-
-    def __getitem__(self, item):
-        """
-        Iterate over the dataset.
-        """
-        if (
-            self.overfit_examples is not None and len(self.overfit_examples) >= 10
-        ):  # then we will return one of 10 examples
-            return self.overfit_examples[item % 10]
-
-        tries = 0
-        while True:  # we try several times, in case something fails
-            text = self.text_dataset[item + tries]["text"]
-            if len(text) < self.args.text_length_min:
-                tries += 1
-                continue
-
-            # get a text span from the dataset
-            text_span_length = self.rng.randint(
-                self.args.text_length_min, self.args.text_length_max
-            )
-            text_span_start = (
-                self.rng.randint(0, len(text) - text_span_length)
-                if len(text) > text_span_length
-                else 0
-            )
-            text_span = text[text_span_start : text_span_start + text_span_length]
-
-            # if we do warmup then we use an easier font
-            if self.warmup:
-                font, font_size, spacing = (
-                    self.ds.get_font_by_name(self.args.warmup_font, 20),
-                    20,
-                    1.0,
-                )
-            else:
-                font, font_size, spacing = self.ds.get_random_font()
-
-            try:
-                image = self.ds.generate_base_image(text_span, font, spacing)
-            except (
-                ValueError,
-                OSError,
-            ):  # if it fails we try again with a different text
-                tries += 1
-                continue
-
-            if self.transform:
-                image = self.transform(image)
-
-            mask, patch_mask = self.generate_random_mask(image.shape[1:])
-            attention_mask = get_attention_mask(self.num_patches)
-            inputs = {
-                "pixel_values": image,
-                "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
-                "num_patches": self.num_patches,
-                "attention_mask": attention_mask,
-            }
-
-            if self.overfit_examples is not None:
-                self.overfit_examples.append(inputs)
-
-            return inputs
-
-            # self.args.update_randomness_intensity(self.max_step, self.step, update_type='linear', warmup_steps=self.warmup_steps)
-            # self.transform = SyntheticDatasetTransform(self.args, rng=self.rng)
