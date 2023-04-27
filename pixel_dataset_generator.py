@@ -21,12 +21,13 @@ import wandb
 from wandb.sdk.wandb_config import Config
 import pandas as pd
 from pprint import pprint
-from utils.utils import crop_image, concatenate_images, embed_image
+from utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
 from torch.utils.data import IterableDataset, get_worker_info
 from dataclasses import dataclass
 import logging
 import torch
 from dataset_transformations import SyntheticDatasetTransform
+import timeit
 
 logging.basicConfig(level=logging.INFO)
 
@@ -82,8 +83,34 @@ class ImageGenerator(object):
         self.config = config
         self.rng = rng
         self.font_list = pd.read_csv(config.font_list_path)
+        self.template = self._preload_template()
 
-    def _get_updated_style_config(self, custom_fonts: List[CustomFont]):
+    def _preload_template(self):
+        dummy_fonts = CustomFont(
+            file_name="DUMMY_FILE", font_name="DUMMY_NAME", font_size="DUMMY_SIZE"
+        )
+        dummy_margin = ["DUMMY_LEFT", "DUMMY_RIGHT", "DUMMY_TOP", "DUMMY_BOTTOM"]
+        dummy_style = self._get_updated_style_config([dummy_fonts], dummy_margin)
+        html_template = self._generate_html_text(
+            self.config.html_template, dummy_style, "DUMMY_TEXT"
+        )
+        return html_template
+
+    def update_template(self, font: CustomFont, text: str, margins: List[int]):
+        """
+        A function to update the template with new font and text
+        """
+        html_template = self.template.replace("DUMMY_FILE", font.file_name)
+        html_template = html_template.replace("DUMMY_NAME", font.font_name)
+        html_template = html_template.replace("DUMMY_SIZE", str(font.font_size))
+        html_template = html_template.replace("DUMMY_LEFT", str(margins[0]))
+        html_template = html_template.replace("DUMMY_RIGHT", str(margins[1]))
+        html_template = html_template.replace("DUMMY_TOP", str(margins[2]))
+        html_template = html_template.replace("DUMMY_BOTTOM", str(margins[3]))
+        html_template = html_template.replace("DUMMY_TEXT", text)
+        return html_template
+
+    def _get_updated_style_config(self, custom_fonts: List[CustomFont], margins: List):
         """
         A function to get the updated style config from wandb
         """
@@ -91,6 +118,10 @@ class ImageGenerator(object):
         style["custom_fonts"] = custom_fonts
         style["font_family_pretraining"] = custom_fonts[0].font_name
         style["font_size_pretraining"] = f"{custom_fonts[0].font_size}px"
+        style["left_margin"] = f"{margins[0]}px"
+        style["right_margin"] = f"{margins[1]}px"
+        style["top_margin"] = f"{margins[2]}px"
+        style["bottom_margin"] = f"{margins[3]}px"
 
         for key in style:
             if key in wandb.config:
@@ -114,6 +145,17 @@ class ImageGenerator(object):
         )
 
         return custom_font
+
+    def _get_random_margins(self) -> List[int]:
+        if self.rng.rand() < self.config.margins_probability:
+            margins = self.rng.randint(
+                np.zeros(4, dtype=int),
+                list(map(lambda x: max(1, x), self.config.max_margins)),
+                4,
+            )
+        else:
+            margins = np.zeros(4, dtype=int)
+        return margins
 
     def _generate_html_text(
         self, template: str, style: Dict, pretraining_text: str
@@ -187,9 +229,8 @@ class ImageGenerator(object):
         """
         if font is None:
             font = self._get_random_custom_font()
-        style = self._get_updated_style_config(custom_fonts=[font])
-        template = self.config.html_template
-        html_text = self._generate_html_text(template, style, text)
+        margins = self._get_random_margins()
+        html_text = self.update_template(font, text, margins)
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
         img_array = self._remove_leading_whitespace(img_array)
         img_array = img_array[: self.config.image_height, :]
@@ -412,19 +453,21 @@ def main():
     train_dataset = PretrainingDataset(
         wandb.config, text_dataset["train"], transform, rng=rng
     )
-    for i in range(10):
+    figures = []
+    for i in range(3):
         train_dataset.set_epoch(i)
+        counter = 0
         for batch in train_dataset:
-            im = Image.fromarray(
-                batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
-            )
-            break
+            if counter == 3:
+                break
+            im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
+            figures.append(im)
+            counter += 1
 
+    im = plot_arrays(figures)
     im.save("results/sample.png")
 
 
 if __name__ == "__main__":
     main()
-    import cProfile
-
-    cProfile.run("main()", sort=1)
+    # print(timeit.timeit(main, number=10))

@@ -86,44 +86,62 @@ class SyntheticDatasetTransform(object):
         """
         Add a random horizontal line to the image.
         """
-        line_length = self.rng.randint(self.args.random_line_length_min, image.shape[0])
-        line_width = self.rng.randint(1, self.args.random_line_max_width)
-        line_start = self.rng.randint(0, image.shape[0] - line_length)
+        num_lines = self.rng.randint(1, 3)
+        empty_lines = np.arange(image.shape[0])[np.all(image == 255, axis=1)]
+        
+        for line in range(num_lines):
+        
+            if empty_lines.shape[0] == 0:
+                return image
+            
+            line_width = self.rng.randint(2, self.args.random_line_max_width)
+            if self.rng.rand() < 0.5:
+                line_length = self.rng.randint(self.args.random_horisontal_line_length_min, image.shape[0])
+                line_start = (image.shape[1] - line_length) // 2
+            else:
+                line_length = image.shape[0]
+                line_start = 0
 
-        image_center = image[50 : image.shape[0] - 50, 50 : image.shape[1] - 50]
-        empty_lines = np.arange(image_center.shape[0])[
-            np.all(image_center == 1, axis=1)
-        ]
-
-        if empty_lines.shape[0] == 0:
-            return image
-
-        line_loc = self.rng.choice(empty_lines) + 50
-        image[
-            line_loc : line_loc + line_width, line_start : line_start + line_length
-        ] = 0
+            line_loc = self.rng.choice(empty_lines)
+            image[
+                line_loc : line_loc + line_width, line_start : line_start + line_length
+            ] = 0.0
+            
+            empty_lines = empty_lines[
+                ~np.isin(empty_lines, np.arange(line_loc, line_loc + line_width))
+            ]
         return image
 
     def add_random_vertical_line(self, image: np.ndarray, **kwargs) -> np.ndarray:
         """
         Add a random vertical line to the image.
         """
-        line_length = self.rng.randint(self.args.random_line_length_min, image.shape[1])
-        line_width = self.rng.randint(1, self.args.random_line_max_width)
-        line_start = self.rng.randint(0, image.shape[1] - line_length)
-
-        image_center = image[50 : image.shape[0] - 50, 50 : image.shape[1] - 50]
-        empty_lines = np.arange(image_center.shape[1])[
-            np.all(image_center == 1, axis=0)
+        line_width = self.rng.randint(2, self.args.random_line_max_width)
+        
+        if self.rng.rand() < 0.5:
+            line_length = self.rng.randint(self.args.random_line_length_min, image.shape[1])
+            line_start = self.rng.randint(0, image.shape[1] - line_length)
+        else:
+            line_length = image.shape[1]
+            line_start = 0
+            
+        empty_lines = np.arange(image.shape[1])[np.all(image == 255, axis=0)]
+        empty_lines = empty_lines[
+            (empty_lines < self.args.max_margins[0] - line_width)
+            | (empty_lines > image.shape[1] - self.args.max_margins[1] + line_width)
         ]
 
-        if empty_lines.shape[0] == 0:
-            return image
-
-        line_loc = self.rng.choice(empty_lines) + 50
-        image[
-            line_start : line_start + line_length, line_loc : line_loc + line_width
-        ] = 0
+        num_lines = self.rng.randint(1, 3)
+        for line in range(num_lines):
+            if empty_lines.shape[0] == 0:
+                break
+            line_loc = self.rng.choice(empty_lines)
+            image[
+                line_start : line_start + line_length, line_loc : line_loc + line_width
+            ] = 0.0
+            empty_lines = empty_lines[
+                ~np.isin(empty_lines, np.arange(line_loc, line_loc + line_width))
+            ]
         return image
 
     def add_random_salt_and_pepper_noise(

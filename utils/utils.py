@@ -11,13 +11,13 @@ import pytesseract
 from PIL import Image, ImageDraw as D
 
 from datasets import load_dataset
-import fuzzysearch
 
 from typing import List, Tuple, Dict, Union, Optional
 import numpy as np
-import copy
-import wandb
+import io
 import pandas as pd
+
+import math
 
 
 def merge_rectangles(rect1: Tuple[float], rect2: Tuple[float], tolerance=5):
@@ -49,7 +49,7 @@ def merge_close_rectangles(rectangles: List[Tuple[float]], tolerance=10):
     while True:
         merged = False
         for i in range(len(rectangles)):
-            for j in range(i+1, len(rectangles)):
+            for j in range(i + 1, len(rectangles)):
                 rect1 = rectangles[i]
                 rect2 = rectangles[j]
                 merged_rect = merge_rectangles(rect1, rect2, tolerance)
@@ -77,7 +77,7 @@ def merge_rectangle_line(rectangles: List[Tuple[float]]):
     max_y = max([y + h for x, y, w, h in rectangles])
     merged = (min_x, min_y, max_x - min_x, max_y - min_y)
     return merged
-    
+
 
 def find_rectangle_centers(rectangles: List[Tuple[float]]):
     """
@@ -85,7 +85,7 @@ def find_rectangle_centers(rectangles: List[Tuple[float]]):
     """
     centers = []
     for x, y, w, h in rectangles:
-        centers.append((x + w/2, y + h/2))
+        centers.append((x + w / 2, y + h / 2))
     return centers
 
 
@@ -140,7 +140,7 @@ def crop_image(img):
     max_indices = non_white_pixels.max(axis=0)
 
     # Crop the image to the smallest possible size containing all non-white pixels.
-    cropped_img = img[min_indices[0]:max_indices[0]+1, :]
+    cropped_img = img[min_indices[0] : max_indices[0] + 1, :]
 
     return cropped_img
 
@@ -161,17 +161,19 @@ def embed_image(img: np.ndarray, width=368, height=368):
     # Create a larger image of the given size.
     if img.shape[0] == height and img.shape[1] == width:
         return img
-    
+
     if len(img.shape) == 2:
         embedded_img = np.ones((height, width), dtype=img.dtype) * img.max()
     else:
-        embedded_img = np.ones((height, width, img.shape[2]), dtype=img.dtype) * img.max()
+        embedded_img = (
+            np.ones((height, width, img.shape[2]), dtype=img.dtype) * img.max()
+        )
 
     # Calculate the offset of the embedded image.
     offset = 0, (width - img.shape[1]) // 2
 
     # Embed the image in the larger image. Starting from the top and centering the image horizontally.
-    embedded_img[:img.shape[0], offset[1]:offset[1]+img.shape[1]] = img
+    embedded_img[: img.shape[0], offset[1] : offset[1] + img.shape[1]] = img
 
     return embedded_img
 
@@ -187,8 +189,44 @@ def concatenate_images(images: List[np.ndarray], axis=0, max_heigh=368):
     Returns:
         np.ndarray: The concatenated scans.
     """
-    
+
     concatenated_scans = np.concatenate(images, axis=axis)
     concatenated_scans = concatenated_scans[:max_heigh]
     assert concatenated_scans.shape[0] <= max_heigh
     return concatenated_scans
+
+
+def plot_arrays(arrays: List[np.ndarray]) -> Image:
+    # get the number of arrays
+    n: int = len(arrays)
+    # get the shape of each array
+    shape: tuple = arrays[0].shape
+    # compute the number of rows and columns for the grid
+    rows: int = math.ceil(math.sqrt(n))
+    cols: int = math.ceil(n / rows)
+    # create a figure with rows x cols subplots
+    fig, axes = plt.subplots(rows, cols, figsize=(10, 10))
+    # adjust the spacing and margins of the subplots
+    fig.subplots_adjust(wspace=0.1, hspace=0.1)
+    fig.tight_layout(pad=0.1)
+    # loop through the arrays and plot them on each subplot
+    for i in range(n):
+        # get the i-th array and subplot
+        array: np.ndarray = arrays[i]
+        # compute the row and column index for the subplot
+        r: int = i // cols
+        c: int = i % cols
+        ax = axes[r][c]
+        # plot the array as an image
+        ax.imshow(array)
+        # set the title as the index of the array
+        ax.set_title(f"Array {i}")
+    # save the figure to a buffer
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    # close the figure
+    plt.close(fig)
+    # create a PIL Image object from the buffer
+    img = Image.open(buf)
+    # return the image object
+    return img
