@@ -1,59 +1,32 @@
 from weasyprint import HTML, CSS
 from weasyprint.fonts import FontConfiguration
-import matplotlib.pyplot as plt
-import cv2
-import numpy as np
+from dataset_transformations import SyntheticDatasetTransform
 from cairocffi import FORMAT_ARGB32
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
-import matplotlib.pyplot as plt
-import pytesseract
 from PIL import Image, ImageDraw as D
-
 from datasets import load_dataset, Dataset
-import fuzzysearch
 from albumentations.pytorch import ToTensorV2
-
 from typing import List, Tuple, Dict, Callable, Optional
-import numpy as np
-import copy
-import wandb
 from wandb.sdk.wandb_config import Config
-import pandas as pd
-from pprint import pprint
-from utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
-from torch.utils.data import IterableDataset, get_worker_info
 from dataclasses import dataclass
+
+from utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
+from utils.dataset_utils import CustomFont
+from torch.utils.data import IterableDataset, get_worker_info
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import pytesseract
+import fuzzysearch
 import logging
+import wandb
 import torch
-from dataset_transformations import SyntheticDatasetTransform
-import timeit
+import copy
+import cv2
 
 logging.basicConfig(level=logging.INFO)
-
-
-@dataclass
-class CustomFont:
-    """
-    A class to represent a custom font
-    """
-
-    file_name: str
-    font_name: str
-    font_size: int
-
-    def __str__(self) -> str:
-        return f"Name: {self.font_name}\nSize: {self.font_size}\nPath: {self.file_name}"
-
-    def __getitem__(self, key: str) -> str:
-        if key == "file_name":
-            return self.file_name
-        elif key == "font_name":
-            return self.font_name
-        elif key == "font_size":
-            return self.font_size
-        else:
-            raise KeyError(f"Invalid key {key}")
 
 
 class ImageGenerator(object):
@@ -365,6 +338,9 @@ class PretrainingDataset(IterableDataset):
         self.text_dataset = text_dataset
         self.rng = rng
         self.image_generator = ImageGenerator(config, rng)
+        self.attention_mask = self.image_generator.get_attention_mask(
+            self.config.num_patches
+        )
 
     def set_epoch(self, epoch):
         """
@@ -431,14 +407,11 @@ class PretrainingDataset(IterableDataset):
             mask, patch_mask = self.image_generator.generate_random_mask(
                 image.shape[1:]
             )
-            attention_mask = self.image_generator.get_attention_mask(
-                self.config.num_patches
-            )
             inputs = {
                 "pixel_values": image,
                 "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
                 "num_patches": self.config.num_patches,
-                "attention_mask": attention_mask,
+                "attention_mask": self.attention_mask,
             }
 
             yield inputs
