@@ -88,15 +88,16 @@ class SyntheticDatasetTransform(object):
         """
         num_lines = self.rng.randint(1, 3)
         empty_lines = np.arange(image.shape[0])[np.all(image == 255, axis=1)]
-        
+
         for line in range(num_lines):
-        
             if empty_lines.shape[0] == 0:
                 return image
-            
+
             line_width = self.rng.randint(2, self.args.random_line_max_width)
             if self.rng.rand() < 0.5:
-                line_length = self.rng.randint(self.args.random_horisontal_line_length_min, image.shape[0])
+                line_length = self.rng.randint(
+                    self.args.random_horisontal_line_length_min, image.shape[0]
+                )
                 line_start = (image.shape[1] - line_length) // 2
             else:
                 line_length = image.shape[0]
@@ -106,7 +107,7 @@ class SyntheticDatasetTransform(object):
             image[
                 line_loc : line_loc + line_width, line_start : line_start + line_length
             ] = 0.0
-            
+
             empty_lines = empty_lines[
                 ~np.isin(empty_lines, np.arange(line_loc, line_loc + line_width))
             ]
@@ -117,14 +118,16 @@ class SyntheticDatasetTransform(object):
         Add a random vertical line to the image.
         """
         line_width = self.rng.randint(2, self.args.random_line_max_width)
-        
+
         if self.rng.rand() < 0.5:
-            line_length = self.rng.randint(self.args.random_line_length_min, image.shape[1])
+            line_length = self.rng.randint(
+                self.args.random_line_length_min, image.shape[1]
+            )
             line_start = self.rng.randint(0, image.shape[1] - line_length)
         else:
             line_length = image.shape[1]
             line_start = 0
-            
+
         empty_lines = np.arange(image.shape[1])[np.all(image == 255, axis=0)]
         empty_lines = empty_lines[
             (empty_lines < self.args.max_margins[0] - line_width)
@@ -264,7 +267,7 @@ class SyntheticDatasetTransform(object):
         """
         noise = self.rng.normal(0, self.args.channel_noise_std * 255, size=(1, 1, 3))
         image = image + noise
-        image = np.clip(image, 0, 255).astype("float32")
+        image = np.clip(image, 0, 255).astype("uint8")
         return image
 
     def __call__(self, image: np.ndarray) -> np.ndarray:

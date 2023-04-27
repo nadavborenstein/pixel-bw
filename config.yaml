@@ -73,13 +73,13 @@ random_font_probability:
 # augmentations config
 bleed_through_probability:
   desc: probability to apply bleed-through effect
-  value: 0.1
+  value: 0.15
 max_bleed_offset:
   desc: maximal translation offset for bleed-through effect
   value: 10
 bleed_alpha_mean:
   desc: mean alpha value (transperancy) of bleed effect
-  value: 0.9
+  value: 0.86
 bleed_alpha_std:
   desc: alpha value std (transperancy) of bleed effect
   value: 0.05
@@ -94,7 +94,7 @@ random_horisontal_line_length_min:
   value: 50
 random_line_max_width:
   desc: maximum width in pixels of random line
-  value: 6
+  value: 5
 salt_and_pepper_pixel_max_probability:
   desc: intensity of salt and pepper noise
   value: 0.01
@@ -106,13 +106,13 @@ blobs_mask_size_max:
   value: 100
 channel_noise_std:
   desc: for converting b&w image to color image, determines the "colorfulness" of it
-  value: 0.02
+  value: 0.03
 random_line_horizontal_probability:
   desc: probability of adding random horizontal line
-  value: 0.9999
+  value: 0.2
 random_line_vertical_probability:
   desc: probability of adding random vertical line
-  value: 0.99
+  value: 0.3
 noise_probability:
   desc: probability of applying pixel level noise
   value: 0.3
@@ -130,7 +130,7 @@ blur_max_sigma:
   value: 3
 blur_probability:
   desc: probability of applying blur
-  value: 0.2
+  value: 0.3
 rotation_max_degrees:
   desc: Maximum rotation angle in degrees
   value: 5.0
@@ -139,4 +139,4 @@ rotation_probability:
   value: 0.2
 color_jitter_probability:
   desc: color_jitter_probability
-  value: 0.2
+  value: 0.4
