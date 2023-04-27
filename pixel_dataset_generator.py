@@ -445,7 +445,7 @@ class PretrainingDataset(IterableDataset):
 
 
 def main():
-    wandb.init(config="config.yaml", mode="disabled")
+    wandb.init(config="configs/config.yaml", mode="disabled")
     rng = np.random.RandomState(2)
     text_dataset = load_dataset("wikipedia", "20220301.simple")
 
