@@ -33,6 +33,12 @@ class SquadImageGenerator(object):
         "word_break": None,
         "line_break": None,
         "line_height_pretraining": None,
+        "font_family_question": "Garamond",
+        "font_size_question": "18px",
+        "line_height_question": None,
+        "font_family_context": "Garamond",
+        "font_size_context": "14px",
+        "line_height_context": None,
     }
 
     def __init__(self, config: Config, rng: np.random.RandomState) -> None:
@@ -46,28 +52,31 @@ class SquadImageGenerator(object):
         self.template = self._preload_template()
 
     def _preload_template(self):
-        dummy_fonts = CustomFont(
-            file_name="DUMMY_FILE", font_name="DUMMY_NAME", font_size="DUMMY_SIZE"
-        )
+        dummy_fonts = [CustomFont(
+            file_name=f"DUMMY_FILE_{i}", font_name=f"DUMMY_NAME_{i}", font_size=f"DUMMY_SIZE_{i}"
+        ) for i in [0,1]]  # one for question and one for context
         dummy_margin = ["DUMMY_LEFT", "DUMMY_RIGHT", "DUMMY_TOP", "DUMMY_BOTTOM"]
         dummy_style = self._get_updated_style_config([dummy_fonts], dummy_margin)
         html_template = self._generate_html_text(
-            self.config.html_template, dummy_style, "DUMMY_TEXT"
+            self.config.html_template, dummy_style, "DUMMY_QUESTION", "DUMMY_CONTEXT"
         )
         return html_template
 
-    def update_template(self, font: CustomFont, text: str, margins: List[int]):
+    def update_template(self, fonts: List[CustomFont], question: str, context: str, margins: List[int]):
         """
-        A function to update the template with new font and text
+        A function to update the template with new font and texts
         """
-        html_template = self.template.replace("DUMMY_FILE", font.file_name)
-        html_template = html_template.replace("DUMMY_NAME", font.font_name)
-        html_template = html_template.replace("DUMMY_SIZE", str(font.font_size))
+        for i in range(2):
+            html_template = self.template.replace(f"DUMMY_FILE_{i}", fonts[i].file_name)
+            html_template = html_template.replace(f"DUMMY_NAME_{i}", fonts[i].font_name)
+            html_template = html_template.replace(f"DUMMY_SIZE_{i}", str(fonts[i].font_size))
+            
         html_template = html_template.replace("DUMMY_LEFT", str(margins[0]))
         html_template = html_template.replace("DUMMY_RIGHT", str(margins[1]))
         html_template = html_template.replace("DUMMY_TOP", str(margins[2]))
         html_template = html_template.replace("DUMMY_BOTTOM", str(margins[3]))
-        html_template = html_template.replace("DUMMY_TEXT", text)
+        html_template = html_template.replace("DUMMY_QUESTION", question)
+        html_template = html_template.replace("DUMMY_CONTEXT", context)
         return html_template
 
     def _get_updated_style_config(self, custom_fonts: List[CustomFont], margins: List):
@@ -76,8 +85,11 @@ class SquadImageGenerator(object):
         """
         style = copy.deepcopy(self.DEFAULT_COMBINATIONS)
         style["custom_fonts"] = custom_fonts
-        style["font_family_pretraining"] = custom_fonts[0].font_name
-        style["font_size_pretraining"] = f"{custom_fonts[0].font_size}px"
+        
+        style["font_family_question"] = custom_fonts[0].font_name
+        style["font_size_question"] = f"{custom_fonts[0].font_size}px"
+        style["font_family_context"] = custom_fonts[1].font_name
+        style["font_size_context"] = f"{custom_fonts[2].font_size}px"
         style["left_margin"] = f"{margins[0]}px"
         style["right_margin"] = f"{margins[1]}px"
         style["top_margin"] = f"{margins[2]}px"
@@ -118,14 +130,14 @@ class SquadImageGenerator(object):
         return margins
 
     def _generate_html_text(
-        self, template: str, style: Dict, pretraining_text: str
+        self, template: str, style: Dict, question: str, context: str
     ) -> str:
         env = Environment(
             loader=FileSystemLoader("./templates/"),
             autoescape=select_autoescape(["html", "xml"]),
         )
         template = env.get_template(template)
-        html_text = template.render(pretraining_text=pretraining_text, **style)
+        html_text = template.render(question=question, context=context, **style)
         return html_text
 
     def _render_html_as_image(self, html_text: str, channel: str = "GRAYSCALE"):
@@ -168,19 +180,6 @@ class SquadImageGenerator(object):
                 f"Invalid channel code {channel}. Valid values are: {valid_channels}."
             )
 
-    def _remove_leading_whitespace(self, img_array: np.ndarray) -> np.ndarray:
-        non_white_pixels = np.argwhere(img_array < 255)
-        min_indices = non_white_pixels.min(axis=0)
-        img_array = img_array[min_indices[0] - 2 :, :]
-        img_array = np.concatenate(
-            [
-                img_array,
-                np.full((min_indices[0] - 2, *img_array.shape[1:]), 255, dtype="uint8"),
-            ],
-            axis=0,
-        )
-        return img_array
-
     def generate(self, text, font: CustomFont = None):
         """
         Generate an image from the given text and font
@@ -192,7 +191,6 @@ class SquadImageGenerator(object):
         margins = self._get_random_margins()
         html_text = self.update_template(font, text, margins)
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
-        img_array = self._remove_leading_whitespace(img_array)
         img_array = img_array[: self.config.image_height, :]
         return img_array, font
 

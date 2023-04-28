@@ -111,7 +111,7 @@ class ImageGenerator(object):
         font_name = random_font.split(".")[0].split("/")[1]
 
         font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 1.5) + self.rng.randint(-4, 5, 1)[0]
+        font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
 
         custom_font = CustomFont(
             file_name=random_font, font_name=font_name.title(), font_size=font_size
