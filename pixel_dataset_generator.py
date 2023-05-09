@@ -209,24 +209,6 @@ class ImageGenerator(object):
         img_array = img_array[: self.config.image_height, :]
         return img_array, font
 
-    def _crop_image(self, img):
-        """
-        Crops an image to the smallest possible size containing all non-white pixels.
-        Parameters:
-            img (np.ndarray): A numpy array representing the image to crop.
-        Returns:
-            np.ndarray: The cropped image.
-        """
-        # Find the indices of all non-white pixels.
-        non_white_pixels = np.argwhere(img < 255)
-
-        # Find the minimum and maximum indices in each dimension.
-        max_indices = non_white_pixels.max(axis=0)
-
-        # Crop the image to the smallest possible size containing all non-white pixels.
-        cropped_img = img[: max_indices[0] + 2, :]
-        return cropped_img
-
     def check_if_can_concatenate(self, img):
         non_white_pixels = np.argwhere(img < 255)
         # Find the minimum and maximum indices in each dimension.
@@ -240,7 +222,7 @@ class ImageGenerator(object):
         """
         A method that concatenates two images vertically
         """
-        concatenated = np.concatenate((self._crop_image(image1), image2), axis=0)
+        concatenated = np.concatenate((crop_image(image1), image2), axis=0)
         concatenated = concatenated[: self.config.image_height, :]
         return concatenated
 
@@ -418,7 +400,7 @@ class PretrainingDataset(IterableDataset):
 
 
 def main():
-    wandb.init(config="configs/config.yaml", mode="disabled")
+    wandb.init(config="configs/pretraining_config.yaml", mode="disabled")
     rng = np.random.RandomState(2)
     text_dataset = load_dataset("wikipedia", "20220301.simple")
 

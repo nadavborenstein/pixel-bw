@@ -3,10 +3,11 @@ from weasyprint import HTML, CSS
 from weasyprint.fonts import FontConfiguration
 from cairocffi import FORMAT_ARGB32
 from torch.utils.data import IterableDataset, get_worker_info
-from datasets import load_dataset
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from utils.dataset_utils import CustomFont
+from utils.utils import crop_image, plot_arrays
+from datasets import load_dataset
 import numpy as np
 import pandas as pd
 import logging
@@ -32,13 +33,7 @@ class SquadImageGenerator(object):
         "line_spacing": ".5",
         "word_break": None,
         "line_break": None,
-        "line_height_pretraining": None,
-        "font_family_question": "Garamond",
-        "font_size_question": "18px",
-        "line_height_question": None,
-        "font_family_context": "Garamond",
-        "font_size_context": "14px",
-        "line_height_context": None,
+        "line_height": None,
     }
 
     def __init__(self, config: Config, rng: np.random.RandomState) -> None:
@@ -49,47 +44,16 @@ class SquadImageGenerator(object):
         self.config = config
         self.rng = rng
         self.font_list = pd.read_csv(config.font_list_path)
-        self.template = self._preload_template()
 
-    def _preload_template(self):
-        dummy_fonts = [CustomFont(
-            file_name=f"DUMMY_FILE_{i}", font_name=f"DUMMY_NAME_{i}", font_size=f"DUMMY_SIZE_{i}"
-        ) for i in [0,1]]  # one for question and one for context
-        dummy_margin = ["DUMMY_LEFT", "DUMMY_RIGHT", "DUMMY_TOP", "DUMMY_BOTTOM"]
-        dummy_style = self._get_updated_style_config([dummy_fonts], dummy_margin)
-        html_template = self._generate_html_text(
-            self.config.html_template, dummy_style, "DUMMY_QUESTION", "DUMMY_CONTEXT"
-        )
-        return html_template
-
-    def update_template(self, fonts: List[CustomFont], question: str, context: str, margins: List[int]):
-        """
-        A function to update the template with new font and texts
-        """
-        for i in range(2):
-            html_template = self.template.replace(f"DUMMY_FILE_{i}", fonts[i].file_name)
-            html_template = html_template.replace(f"DUMMY_NAME_{i}", fonts[i].font_name)
-            html_template = html_template.replace(f"DUMMY_SIZE_{i}", str(fonts[i].font_size))
-            
-        html_template = html_template.replace("DUMMY_LEFT", str(margins[0]))
-        html_template = html_template.replace("DUMMY_RIGHT", str(margins[1]))
-        html_template = html_template.replace("DUMMY_TOP", str(margins[2]))
-        html_template = html_template.replace("DUMMY_BOTTOM", str(margins[3]))
-        html_template = html_template.replace("DUMMY_QUESTION", question)
-        html_template = html_template.replace("DUMMY_CONTEXT", context)
-        return html_template
-
-    def _get_updated_style_config(self, custom_fonts: List[CustomFont], margins: List):
+    def _get_updated_style_config(self, custom_font: CustomFont, margins: List):
         """
         A function to get the updated style config from wandb
         """
         style = copy.deepcopy(self.DEFAULT_COMBINATIONS)
-        style["custom_fonts"] = custom_fonts
-        
-        style["font_family_question"] = custom_fonts[0].font_name
-        style["font_size_question"] = f"{custom_fonts[0].font_size}px"
-        style["font_family_context"] = custom_fonts[1].font_name
-        style["font_size_context"] = f"{custom_fonts[2].font_size}px"
+        style["custom_fonts"] = [custom_font]
+
+        style["font_family"] = custom_font.font_name
+        style["font_size"] = f"{custom_font.font_size}px"
         style["left_margin"] = f"{margins[0]}px"
         style["right_margin"] = f"{margins[1]}px"
         style["top_margin"] = f"{margins[2]}px"
@@ -110,12 +74,11 @@ class SquadImageGenerator(object):
         font_name = random_font.split(".")[0].split("/")[1]
 
         font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 1.5) + self.rng.randint(-4, 5, 1)[0]
+        font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
 
         custom_font = CustomFont(
             file_name=random_font, font_name=font_name.title(), font_size=font_size
         )
-
         return custom_font
 
     def _get_random_margins(self) -> List[int]:
@@ -130,14 +93,21 @@ class SquadImageGenerator(object):
         return margins
 
     def _generate_html_text(
-        self, template: str, style: Dict, question: str, context: str
+        self, template: str, style: Dict, question: str = None, context: str = None
     ) -> str:
         env = Environment(
             loader=FileSystemLoader("./templates/"),
             autoescape=select_autoescape(["html", "xml"]),
         )
         template = env.get_template(template)
-        html_text = template.render(question=question, context=context, **style)
+        if question is None and context is not None:
+            html_text = template.render(context=context, **style)
+        elif context is None and question is not None:
+            html_text = template.render(question=question, **style)
+        else:
+            raise ValueError(
+                "One of 'question' or 'context' should be provided to the function, and only one"
+            )
         return html_text
 
     def _render_html_as_image(self, html_text: str, channel: str = "GRAYSCALE"):
@@ -180,54 +150,70 @@ class SquadImageGenerator(object):
                 f"Invalid channel code {channel}. Valid values are: {valid_channels}."
             )
 
-    def generate(self, text, font: CustomFont = None):
+    def _generate_question(self, text: str, font: CustomFont) -> np.ndarray:
+        margins = self._get_random_margins()
+        style = self._get_updated_style_config(font, margins)
+        html_text = self._generate_html_text(template=self.config.html_question_template, question=text, style=style)
+        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        img_array = crop_image(img_array)
+        return img_array
+
+    def _generate_context(self, text: str, font: CustomFont) -> np.ndarray:
+        margins = self._get_random_margins()
+        style = self._get_updated_style_config(font, margins)
+        html_text = self._generate_html_text(template=self.config.html_context_template, context=text, style=style)
+        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        return img_array
+
+    def generate(
+        self,
+        question: str,
+        context: str,
+        fonts: List[CustomFont] = None,
+        method: str = "random_crop",
+    ):
         """
         Generate an image from the given text and font
         :param text: The text to be rendered
         :param font: The font to be used
+        :param method: The method to be used for generating the image, one of ["random_crop", "concatenate", "list", "first_crop"]
         """
-        if font is None:
-            font = self._get_random_custom_font()
-        margins = self._get_random_margins()
-        html_text = self.update_template(font, text, margins)
-        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
-        img_array = img_array[: self.config.image_height, :]
-        return img_array, font
+        if fonts is None:
+            fonts = [self._get_random_custom_font() for _ in range(2)]
 
-    def _crop_image(self, img):
-        """
-        Crops an image to the smallest possible size containing all non-white pixels.
-        Parameters:
-            img (np.ndarray): A numpy array representing the image to crop.
-        Returns:
-            np.ndarray: The cropped image.
-        """
-        # Find the indices of all non-white pixels.
-        non_white_pixels = np.argwhere(img < 255)
+        question = self._generate_question(question, fonts[0])
+        context = self._generate_context(context, fonts[1])
 
-        # Find the minimum and maximum indices in each dimension.
-        max_indices = non_white_pixels.max(axis=0)
+        if method == "concatenate":
+            scan = np.concatenate((question, context), axis=0)
+        elif method == "first_crop":
+            concatenated = np.concatenate((question, context), axis=0)
+            scan = concatenated[: self.config.image_height, :]
+        elif method == "random_crop":
+            context_crop_size = self.config.image_height - question.shape[0]
+            random_context_crop_loc = self.rng.randint(
+                0, context.shape[0] - context_crop_size
+            )
+            random_context_crop = context[
+                random_context_crop_loc : random_context_crop_loc + context_crop_size, :
+            ]
+            scan = np.concatenate((question, random_context_crop), axis=0)
+            assert scan.shape[0] == self.config.image_height
+        elif method == "list":
+            context_crop_size = self.config.image_height - question.shape[0]
+            scan = []
+            for i in range(0, context.shape[0], context_crop_size):
+                scan.append(
+                    np.concatenate(
+                        (question, context[i : i + context_crop_size, :]), axis=0
+                    )
+                )
+        else:
+            raise ValueError(
+                f"Invalid method {method}. Valid values are: ['random_crop', 'concatenate', 'list', 'first_crop']"
+            )
 
-        # Crop the image to the smallest possible size containing all non-white pixels.
-        cropped_img = img[: max_indices[0] + 2, :]
-        return cropped_img
-
-    def check_if_can_concatenate(self, img):
-        non_white_pixels = np.argwhere(img < 255)
-        # Find the minimum and maximum indices in each dimension.
-        max_indices = non_white_pixels.max(axis=0)
-        return (
-            self.config.image_height - max_indices[0]
-            > self.config.maximal_white_space_in_image
-        )
-
-    def concatenate_images(self, image1, image2):
-        """
-        A method that concatenates two images vertically
-        """
-        concatenated = np.concatenate((self._crop_image(image1), image2), axis=0)
-        concatenated = concatenated[: self.config.image_height, :]
-        return concatenated
+        return scan
 
     def get_attention_mask(self, num_text_patches: int):
         """
@@ -257,7 +243,9 @@ class SquadDatasetForPixel(IterableDataset):
         self.transform = transform
         self.rng = rng
         self.image_generator = SquadImageGenerator(config, rng)
-        self.attention_mask = self.image_generator.get_attention_mask(config.num_patches)
+        self.attention_mask = self.image_generator.get_attention_mask(
+            config.num_patches
+        )
 
     def set_epoch(self, epoch):
         """
@@ -272,21 +260,53 @@ class SquadDatasetForPixel(IterableDataset):
     def _generate_scans_fron_sample(self, instance: Dict):
         question = instance["question"]
         context = instance["context"]
-        generated_scans = self.image_generator.generate(question, context)
-        label_masks = self.image_generator.generate_label_mask(generated_scans, instance['answers']['text'][0])
-        return generated_scans, label_masks
+
+        scan = self.image_generator.generate(question, context, method=self.config.long_context_generation_method)
+
+        # label_mask = self.image_generator.generate_label_mask(
+        #     scan, instance["answers"]["text"][0]
+        # )
+        label_mask = None
+        return scan, label_mask
 
     def __iter__(self) -> dict:
         for data in self.text_dataset:
-            generated_scans, label_masks = self._generate_scans_fron_sample(data)
-            for scan, mask in zip(generated_scans, label_masks):
-                if self.transform:
-                    scan, mask = self.transform(scan, mask)
-                    
-                inputs = {
-                    "pixel_values": scan,
-                    "label_mask": mask,
-                    "num_patches": self.config.num_patches,
-                    "attention_mask": self.attention_mask,
-                }
-                yield inputs
+            scan, mask = self._generate_scans_fron_sample(data)
+
+            if self.transform:
+                scan, mask = self.transform(scan, mask)
+
+            inputs = {
+                "pixel_values": scan,
+                "label_mask": mask,
+                "num_patches": self.config.num_patches,
+                "attention_mask": self.attention_mask,
+            }
+            yield inputs
+
+
+def main():
+    wandb.init(config="configs/squad_config.yaml", mode="disabled")
+    rng = np.random.RandomState(2)
+
+    transform = None
+    train_dataset = SquadDatasetForPixel(
+        config=wandb.config, transform=transform, rng=rng, split="train"
+    )
+    figures = []
+    for i in range(3):
+        train_dataset.set_epoch(i)
+        counter = 0
+        for batch in train_dataset:
+            if counter == 3:
+                break
+            im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
+            figures.append(im)
+            counter += 1
+
+    im = plot_arrays(figures)
+    im.save("results/sample_squad.png")
+
+
+if __name__ == "__main__":
+    main()
