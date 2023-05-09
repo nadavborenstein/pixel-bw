@@ -141,7 +141,7 @@ def crop_image(img, vertical: bool = True, horizontal: bool = False):
 
     min_indices_horizontal = non_white_pixels.min(axis=1)
     max_indices_horizontal = non_white_pixels.max(axis=1)
-    
+
     # Crop the image to the smallest possible size containing all non-white pixels.
     if vertical:
         img = img[min_indices_vertical[0] : max_indices_vertical[0] + 1, :]
@@ -223,7 +223,10 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
         c: int = i % cols
         ax = axes[r][c]
         # plot the array as an image
-        ax.imshow(array)
+        if len(shape) == 2:
+            ax.imshow(array, cmap="gray")
+        else:
+            ax.imshow(array)
         # set the title as the index of the array
         ax.set_title(f"Array {i}")
     # save the figure to a buffer

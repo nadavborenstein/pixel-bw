@@ -5,11 +5,14 @@ from cairocffi import FORMAT_ARGB32
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
-from utils.dataset_utils import CustomFont
 from utils.utils import crop_image, plot_arrays
+from utils.dataset_utils import CustomFont
+from utils.squad_utils import generate_mask_from_recangles, merge_rectangle_lines
 from datasets import load_dataset
 import numpy as np
 import pandas as pd
+import fuzzysearch
+import pytesseract
 import logging
 import torch
 import wandb
@@ -75,7 +78,6 @@ class SquadImageGenerator(object):
 
         font_size = self.font_list["base_size"][random_index]
         font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
-
         custom_font = CustomFont(
             file_name=random_font, font_name=font_name.title(), font_size=font_size
         )
@@ -150,10 +152,14 @@ class SquadImageGenerator(object):
                 f"Invalid channel code {channel}. Valid values are: {valid_channels}."
             )
 
-    def _generate_question(self, text: str, font: CustomFont) -> np.ndarray:
-        margins = self._get_random_margins()
+    def _generate_question(self, text: str, font: CustomFont = None) -> np.ndarray:
+        if font is None:
+            font = CustomFont(file_name="Ariel", font_name="Ariel", font_size=28)
+        margins = [1, 1, 1, 1]
         style = self._get_updated_style_config(font, margins)
-        html_text = self._generate_html_text(template=self.config.html_question_template, question=text, style=style)
+        html_text = self._generate_html_text(
+            template=self.config.html_question_template, question=text, style=style
+        )
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
         img_array = crop_image(img_array)
         return img_array
@@ -161,7 +167,9 @@ class SquadImageGenerator(object):
     def _generate_context(self, text: str, font: CustomFont) -> np.ndarray:
         margins = self._get_random_margins()
         style = self._get_updated_style_config(font, margins)
-        html_text = self._generate_html_text(template=self.config.html_context_template, context=text, style=style)
+        html_text = self._generate_html_text(
+            template=self.config.html_context_template, context=text, style=style
+        )
         img_array = self._render_html_as_image(html_text, channel=self.config.channel)
         return img_array
 
@@ -169,7 +177,7 @@ class SquadImageGenerator(object):
         self,
         question: str,
         context: str,
-        fonts: List[CustomFont] = None,
+        font: CustomFont = None,
         method: str = "random_crop",
     ):
         """
@@ -178,11 +186,11 @@ class SquadImageGenerator(object):
         :param font: The font to be used
         :param method: The method to be used for generating the image, one of ["random_crop", "concatenate", "list", "first_crop"]
         """
-        if fonts is None:
-            fonts = [self._get_random_custom_font() for _ in range(2)]
+        if font is None:
+            font = self._get_random_custom_font()
 
-        question = self._generate_question(question, fonts[0])
-        context = self._generate_context(context, fonts[1])
+        question = self._generate_question(question)
+        context = self._generate_context(context, font)
 
         if method == "concatenate":
             scan = np.concatenate((question, context), axis=0)
@@ -214,6 +222,61 @@ class SquadImageGenerator(object):
             )
 
         return scan
+
+    def _locate_answer(self, data_dict: Dict, answer: str):
+        all_text_offest_map = dict()
+        all_texts = ""
+        for i, text in enumerate(data_dict["text"]):
+            if text.strip() != "":
+                for j in range(len(text)):
+                    all_text_offest_map[len(all_texts) + j] = i
+                all_texts += text + " "
+
+        match = fuzzysearch.find_near_matches(
+            answer,
+            all_texts,
+            max_l_dist=int(len(answer) ** self.config.max_l_dist_factor),
+        )
+        return match, all_text_offest_map
+
+    def _generate_rectangle_for_matched_answer(
+        self, match, data_dict, all_text_offest_map
+    ):
+        start_id = all_text_offest_map[match[0].start]
+        end_id = all_text_offest_map[match[0].end - 1]
+        all_rectangles = []
+        for i in range(start_id, end_id + 1):
+            if data_dict["text"][i].strip() != "":
+                all_rectangles.append(
+                    (
+                        data_dict["left"][i],
+                        data_dict["top"][i],
+                        data_dict["width"][i],
+                        data_dict["height"][i],
+                    )
+                )
+        return all_rectangles
+
+    def generate_label_mask(self, img_array: np.ndarray, answer: str):
+        """
+        Locate the suqad answer inside the scan using tesseract
+        """
+        data_dict = pytesseract.image_to_data(
+            img_array, lang="eng", output_type=pytesseract.Output.DICT
+        )
+        match, all_text_offest_map = self._locate_answer(data_dict, answer)
+        if len(match) == 0:
+            return generate_mask_from_recangles(
+                [], img_array.shape, self.config.patch_base_size[0]
+            )
+        else:
+            matched_rectangles = self._generate_rectangle_for_matched_answer(
+                match, data_dict, all_text_offest_map
+            )
+            matched_rectangles = merge_rectangle_lines(matched_rectangles, tolerance=10)
+            return generate_mask_from_recangles(
+                matched_rectangles, img_array.shape, self.config.patch_base_size[0]
+            )
 
     def get_attention_mask(self, num_text_patches: int):
         """
@@ -261,17 +324,18 @@ class SquadDatasetForPixel(IterableDataset):
         question = instance["question"]
         context = instance["context"]
 
-        scan = self.image_generator.generate(question, context, method=self.config.long_context_generation_method)
+        scan = self.image_generator.generate(
+            question, context, method=self.config.long_context_generation_method
+        )
 
-        # label_mask = self.image_generator.generate_label_mask(
-        #     scan, instance["answers"]["text"][0]
-        # )
-        label_mask = None
-        return scan, label_mask
+        patch_mask, mask = self.image_generator.generate_label_mask(
+            scan, instance["answers"]["text"][0]
+        )
+        return scan, patch_mask, mask
 
     def __iter__(self) -> dict:
         for data in self.text_dataset:
-            scan, mask = self._generate_scans_fron_sample(data)
+            scan, patch_mask, mask = self._generate_scans_fron_sample(data)
 
             if self.transform:
                 scan, mask = self.transform(scan, mask)
@@ -300,7 +364,10 @@ def main():
         for batch in train_dataset:
             if counter == 3:
                 break
-            im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
+            im = batch["pixel_values"].astype("int32")
+            mask = batch["label_mask"]
+            im[mask == 1] = im[mask == 1] - 30
+            im = np.clip(im, 0, 255).astype("uint8")
             figures.append(im)
             counter += 1
 

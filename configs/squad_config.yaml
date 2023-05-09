@@ -75,6 +75,9 @@ num_patches:
 random_font_probability:
   desc: probability to replace font mid scan
   value: 0.5
+max_l_dist_factor:
+  desc: length factor for fuzzy string matching
+  value: 0.4
 
 # augmentations config
 bleed_through_probability:
