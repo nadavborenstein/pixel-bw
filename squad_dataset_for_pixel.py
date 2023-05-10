@@ -55,7 +55,7 @@ class SquadImageGenerator(object):
         A function to get the updated style config from wandb
         """
         style = copy.deepcopy(self.DEFAULT_COMBINATIONS)
-        
+
         if custom_font is not None:
             style["custom_fonts"] = [custom_font]
             style["font_family"] = custom_font.font_name
@@ -132,11 +132,17 @@ class SquadImageGenerator(object):
         html_text = self._generate_html_text(
             template=self.config.html_question_template, question=text, style=style
         )
-        img_array = render_html_as_image(html_text, image_resolution=self.config.image_resolution, channel=self.config.channel)
+        img_array = render_html_as_image(
+            html_text,
+            image_resolution=self.config.image_resolution,
+            channel=self.config.channel,
+        )
         img_array = crop_image(img_array)
         return img_array
 
-    def _generate_context(self, text: str, font: CustomFont, randomize_font: bool = True) -> np.ndarray:
+    def _generate_context(
+        self, text: str, font: CustomFont, randomize_font: bool = True
+    ) -> np.ndarray:
         """
         Generate a context image from the given text and font
         """
@@ -145,7 +151,11 @@ class SquadImageGenerator(object):
         html_text = self._generate_html_text(
             template=self.config.html_context_template, context=text, style=style
         )
-        img_array = render_html_as_image(html_text, image_resolution=self.config.image_resolution, channel=self.config.channel)
+        img_array = render_html_as_image(
+            html_text,
+            image_resolution=self.config.image_resolution,
+            channel=self.config.channel,
+        )
         return img_array
 
     def generate(
@@ -164,7 +174,7 @@ class SquadImageGenerator(object):
         """
         if font is None and randomize_font:
             font = self._get_random_custom_font()
-            
+
         question = self._generate_question(question)
         context = self._generate_context(context, font, randomize_font)
         context_crop_size = self.config.image_height - question.shape[0]
@@ -197,7 +207,7 @@ class SquadImageGenerator(object):
         all_texts = ""
         for i, text in enumerate(data_dict["text"]):
             if text.strip() != "":
-                for j in range(len(text)):
+                for j in range(len(text) + 1):
                     all_text_offest_map[len(all_texts) + j] = i
                 all_texts += text + " "
 
@@ -211,8 +221,10 @@ class SquadImageGenerator(object):
     def _generate_rectangle_for_matched_answer(
         self, match, data_dict, all_text_offest_map
     ):
+
         start_id = all_text_offest_map[match[0].start]
         end_id = all_text_offest_map[match[0].end - 1]
+                
         all_rectangles = []
         for i in range(start_id, end_id + 1):
             if data_dict["text"][i].strip() != "":
@@ -230,11 +242,14 @@ class SquadImageGenerator(object):
         """
         Locate the suqad answer inside the scan using tesseract
         """
+        if answer == "":
+            return generate_pixel_mask_from_recangles([], img_array.shape)
+
         data_dict = pytesseract.image_to_data(
             img_array, lang="eng", output_type=pytesseract.Output.DICT
         )
         match, all_text_offest_map = self._locate_answer(data_dict, answer)
-        if len(match) == 0:
+        if len(match) == 0 or match[0].end == 0:
             return generate_pixel_mask_from_recangles([], img_array.shape)
         else:
             matched_rectangles = self._generate_rectangle_for_matched_answer(
@@ -263,7 +278,7 @@ class SquadDatasetForPixel(IterableDataset):
     """
     A class to represent the squad dataset for pixel
     """
-    
+
     def __init__(
         self,
         config: Config,
@@ -280,7 +295,7 @@ class SquadDatasetForPixel(IterableDataset):
         self.attention_mask = self.image_generator.get_attention_mask(
             config.num_patches
         )
-        self.randomize_font = (split == "train")
+        self.randomize_font = split == "train"
 
     def set_epoch(self, epoch):
         """
@@ -298,14 +313,20 @@ class SquadDatasetForPixel(IterableDataset):
         """
         question = instance["question"]
         context = instance["context"]
+        answer = (
+            instance["answers"]["text"][0]
+            if len(instance["answers"]["text"]) > 0
+            else ""
+        )
 
         question_scan, context_scan = self.image_generator.generate(
-            question, context, method=self.config.long_context_generation_method, randomize_font=self.randomize_font
+            question,
+            context,
+            method=self.config.long_context_generation_method,
+            randomize_font=self.randomize_font,
         )
 
-        mask = self.image_generator.generate_pixel_mask(
-            context_scan, instance["answers"]["text"][0]
-        )
+        mask = self.image_generator.generate_pixel_mask(context_scan, answer)
 
         return question_scan, context_scan, mask
 
@@ -347,19 +368,19 @@ def main():
         config=wandb.config, transform=transform, rng=rng, split="validation"
     )
     figures = []
-    for i in range(3):
+    for i in range(1):
         train_dataset.set_epoch(i)
         counter = 0
         for batch in train_dataset:
-            if counter == 3:
+            if counter == 3000:
                 break
-            im = batch["pixel_values"].numpy().astype("float32").transpose(1, 2, 0)
-            mask = batch["label_mask"].numpy()
-            mask = np.kron(mask, np.ones((16, 16)))
-            im[mask == 1] = im[mask == 1] - 60
-            im = np.clip(im, 0, 255).astype("uint8")
-            figures.append(im)
-            counter += 1
+            # im = batch["pixel_values"].numpy().astype("float32").transpose(1, 2, 0)
+            # mask = batch["label_mask"].numpy()
+            # mask = np.kron(mask, np.ones((16, 16)))
+            # im[mask == 1] = im[mask == 1] - 60
+            # im = np.clip(im, 0, 255).astype("uint8")
+            # figures.append(im)
+            # counter += 1
 
     im = plot_arrays(figures)
     im.save("results/sample_squad.png")

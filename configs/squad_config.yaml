@@ -148,7 +148,7 @@ rotation_max_degrees:
   value: 5.0
 rotation_probability:
   desc: probability of applying rotation
-  value: 0.999
+  value: 0.2
 color_jitter_probability:
   desc: color_jitter_probability
   value: 0.4
