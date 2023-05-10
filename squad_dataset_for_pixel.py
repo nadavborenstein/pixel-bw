@@ -7,6 +7,7 @@ from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from utils.utils import crop_image, plot_arrays
 from utils.dataset_utils import CustomFont
+from dataset_transformations import SyntheticDatasetTransform
 from utils.squad_utils import (
     generate_pixel_mask_from_recangles,
     merge_rectangle_lines,
@@ -334,18 +335,20 @@ class SquadDatasetForPixel(IterableDataset):
             question_scan, context_scan, mask = self._generate_scans_fron_sample(data)
 
             if self.transform:
+                question_scan = torch.from_numpy(np.stack([question_scan] * 3))
                 context_scan, mask = self.transform(context_scan, mask)
 
-            scan = np.concatenate([question_scan, context_scan], axis=0)
+            scan = torch.concat([question_scan, context_scan], axis=1)
             scan = scan[: self.config.image_height, :]
 
-            mask = np.concatenate([np.zeros_like(question_scan), mask], axis=0)
+            mask = torch.concat([torch.zeros(question_scan.shape[1:]), mask], axis=0)
             mask = mask[: self.config.image_height, :]
             mask = convert_pixel_mask_to_patch_mask(
-                mask,
+                mask.numpy(),
                 self.config.patch_base_size[0],
                 self.config.mask_patching_tolerance,
             )
+            mask = torch.from_numpy(mask)
 
             inputs = {
                 "pixel_values": scan,
@@ -360,7 +363,7 @@ def main():
     wandb.init(config="configs/squad_config.yaml", mode="disabled")
     rng = np.random.RandomState(2)
 
-    transform = None
+    transform = SyntheticDatasetTransform(wandb.config, rng=rng)
     train_dataset = SquadDatasetForPixel(
         config=wandb.config, transform=transform, rng=rng, split="validation"
     )
@@ -371,10 +374,10 @@ def main():
         for batch in train_dataset:
             if counter == 3:
                 break
-            im = batch["pixel_values"].astype("int32")
-            mask = batch["label_mask"]
+            im = batch["pixel_values"].numpy().astype("float32").transpose(1, 2, 0)
+            mask = batch["label_mask"].numpy()
             mask = np.kron(mask, np.ones((16, 16)))
-            im[mask == 1] = im[mask == 1] - 40
+            im[mask == 1] = im[mask == 1] - 60
             im = np.clip(im, 0, 255).astype("uint8")
             figures.append(im)
             counter += 1

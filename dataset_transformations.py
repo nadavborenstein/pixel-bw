@@ -270,7 +270,7 @@ class SyntheticDatasetTransform(object):
         image = np.clip(image, 0, 255).astype("uint8")
         return image
 
-    def __call__(self, image: np.ndarray) -> np.ndarray:
+    def __call__(self, image: np.ndarray, mask=None) -> np.ndarray:
         transformation = A.Compose(
             [
                 A.Lambda(
@@ -387,6 +387,11 @@ class SyntheticDatasetTransform(object):
                 ToTensorV2(),
             ]
         )
-
-        image = transformation(image=image)["image"]
-        return image
+        if mask is None:
+            image = transformation(image=image)["image"]
+            return image
+        else:
+            transformed = transformation(image=image, mask=mask)
+            image = transformed["image"]
+            mask = transformed["mask"]
+            return image, mask
