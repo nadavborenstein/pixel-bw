@@ -355,7 +355,7 @@ def main():
 
     transform = None
     train_dataset = SquadDatasetForPixel(
-        config=wandb.config, transform=transform, rng=rng, split="train"
+        config=wandb.config, transform=transform, rng=rng, split="validation"
     )
     figures = []
     for i in range(3):

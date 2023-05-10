@@ -1,5 +1,6 @@
 from typing import List, Tuple
 import numpy as np
+from math import ceil, floor
 
 
 def merge_rectangles(rect1: Tuple[float], rect2: Tuple[float], tolerance=5):
@@ -21,24 +22,28 @@ def merge_rectangles(rect1: Tuple[float], rect2: Tuple[float], tolerance=5):
         return None
 
 
-def generate_mask_from_recangles(rectangles: List[Tuple[int]], img_shape: Tuple[int], patch_size: int = 16):
+def generate_mask_from_recangles(
+    rectangles: List[Tuple[int]], img_shape: Tuple[int], patch_size: int = 16
+):
     patch_image = np.zeros((img_shape[0] // patch_size, img_shape[1] // patch_size))
     for rectangle in rectangles:
-        x_patch = rectangle[0] // patch_size
-        y_patch = rectangle[1] // patch_size
+        x_patch = floor(rectangle[0] / patch_size)
+        y_patch = floor(rectangle[1] / patch_size)
+        
+        w_patch = round((rectangle[0] + rectangle[2]) / patch_size)
+        h_patch = round((rectangle[1] + rectangle[3]) / patch_size)
 
-        w_patch = rectangle[2] // patch_size
-        h_patch = rectangle[3] // patch_size
-
-        patch_image[y_patch:y_patch+h_patch + 1, x_patch:x_patch+w_patch + 1] = 1
+        patch_image[
+            y_patch : h_patch + 1, x_patch : w_patch + 1
+        ] = 1
     return patch_image, np.kron(patch_image, np.ones((patch_size, patch_size)))
-    
-    
+
+
 def merge_close_rectangles(rectangles: List[Tuple[float]], tolerance=10):
     while True:
         merged = False
         for i in range(len(rectangles)):
-            for j in range(i+1, len(rectangles)):
+            for j in range(i + 1, len(rectangles)):
                 rect1 = rectangles[i]
                 rect2 = rectangles[j]
                 merged_rect = merge_rectangles(rect1, rect2, tolerance)
@@ -66,7 +71,7 @@ def merge_rectangle_line(rectangles: List[Tuple[float]]):
     max_y = max([y + h for x, y, w, h in rectangles])
     merged = (min_x, min_y, max_x - min_x, max_y - min_y)
     return merged
-    
+
 
 def find_rectangle_centers(rectangles: List[Tuple[float]]):
     """
@@ -74,7 +79,7 @@ def find_rectangle_centers(rectangles: List[Tuple[float]]):
     """
     centers = []
     for x, y, w, h in rectangles:
-        centers.append((x + w/2, y + h/2))
+        centers.append((x + w / 2, y + h / 2))
     return centers
 
 

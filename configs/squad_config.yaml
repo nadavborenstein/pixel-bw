@@ -20,7 +20,7 @@ html_context_template:
   value: "context_block.html.jinja"
 long_context_generation_method:
   desc: method used by the generation function to handle long context
-  value: "first_crop"  
+  value: "random_crop"  
 max_margins:
   desc: maximum size of margin at the edges of the scan = [left, right, top, bottom]
   value: [15, 15, 3, 0]
