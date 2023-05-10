@@ -1,13 +1,10 @@
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML, CSS
-from weasyprint.fonts import FontConfiguration
-from cairocffi import FORMAT_ARGB32
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from utils.utils import crop_image, plot_arrays
-from utils.dataset_utils import CustomFont
-from dataset_transformations import SyntheticDatasetTransform
+from utils.dataset_utils import CustomFont, render_html_as_image
+from dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
 from utils.squad_utils import (
     generate_pixel_mask_from_recangles,
     merge_rectangle_lines,
@@ -22,14 +19,14 @@ import logging
 import torch
 import wandb
 import copy
-import cv2
 
 
 class SquadImageGenerator(object):
     DEFAULT_COMBINATIONS = {
         "language": "en_US",
-        "font_family": "Garamond",
-        "font_size": "18px",
+        "custom_fonts": [],
+        "font_family": "Ariel",
+        "font_size": "20px",
         "text_align": "justify",
         "hyphenate": False,
         "width": "368px",
@@ -58,10 +55,11 @@ class SquadImageGenerator(object):
         A function to get the updated style config from wandb
         """
         style = copy.deepcopy(self.DEFAULT_COMBINATIONS)
-        style["custom_fonts"] = [custom_font]
-
-        style["font_family"] = custom_font.font_name
-        style["font_size"] = f"{custom_font.font_size}px"
+        
+        if custom_font is not None:
+            style["custom_fonts"] = [custom_font]
+            style["font_family"] = custom_font.font_name
+            style["font_size"] = f"{custom_font.font_size}px"
         style["left_margin"] = f"{margins[0]}px"
         style["right_margin"] = f"{margins[1]}px"
         style["top_margin"] = f"{margins[2]}px"
@@ -89,6 +87,9 @@ class SquadImageGenerator(object):
         return custom_font
 
     def _get_random_margins(self) -> List[int]:
+        """
+        Get random margins
+        """
         if self.rng.rand() < self.config.margins_probability:
             margins = self.rng.randint(
                 np.zeros(4, dtype=int),
@@ -102,6 +103,9 @@ class SquadImageGenerator(object):
     def _generate_html_text(
         self, template: str, style: Dict, question: str = None, context: str = None
     ) -> str:
+        """
+        A function to generate an HTML text from the given template and style
+        """
         env = Environment(
             loader=FileSystemLoader("./templates/"),
             autoescape=select_autoescape(["html", "xml"]),
@@ -117,47 +121,10 @@ class SquadImageGenerator(object):
             )
         return html_text
 
-    def _render_html_as_image(self, html_text: str, channel: str = "GRAYSCALE"):
-        """
-        A function to render an HTML text as an image
-        """
-        font_config = FontConfiguration()  # TODO define once outside the function
-        html = HTML(string=html_text, base_url=".")
-        doc = html.render(font_config=font_config)
-        surface, width, height = doc.write_image_surface(
-            resolution=self.config.image_resolution
-        )
-        img_format = surface.get_format()
-
-        # This is BGRA channel in little endian (reverse)
-        if img_format != FORMAT_ARGB32:
-            raise RuntimeError(
-                f"Expect surface format to be 'cairocffi.FORMAT_ARGB32', but got {img_format}."
-                + "Please check the underlining implementation of 'weasyprint.document.Document.write_image_surface()'"
-            )
-
-        img_buffer = surface.get_data()
-        # Returns image array in "BGRA" channel
-        img_array = np.ndarray(
-            shape=(height, width, 4), dtype=np.uint8, buffer=img_buffer
-        )
-        if channel == "GRAYSCALE":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2GRAY)
-        elif channel == "RGBA":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGBA)
-        elif channel == "RGB":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGB)
-        elif channel == "BGRA":
-            return np.copy(img_array)
-        elif channel == "BGR":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
-        else:
-            valid_channels = ["GRAYSCALE", "RGB", "RGBA", "BGR", "BGRA"]
-            raise ValueError(
-                f"Invalid channel code {channel}. Valid values are: {valid_channels}."
-            )
-
     def _generate_question(self, text: str, font: CustomFont = None) -> np.ndarray:
+        """
+        Generate a question image from the given text and font
+        """
         if font is None:
             font = CustomFont(file_name="Ariel", font_name="Ariel", font_size=28)
         margins = [1, 1, 1, 1]
@@ -165,17 +132,20 @@ class SquadImageGenerator(object):
         html_text = self._generate_html_text(
             template=self.config.html_question_template, question=text, style=style
         )
-        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        img_array = render_html_as_image(html_text, image_resolution=self.config.image_resolution, channel=self.config.channel)
         img_array = crop_image(img_array)
         return img_array
 
-    def _generate_context(self, text: str, font: CustomFont) -> np.ndarray:
-        margins = self._get_random_margins()
+    def _generate_context(self, text: str, font: CustomFont, randomize_font: bool = True) -> np.ndarray:
+        """
+        Generate a context image from the given text and font
+        """
+        margins = self._get_random_margins() if randomize_font else [1, 1, 1, 0]
         style = self._get_updated_style_config(font, margins)
         html_text = self._generate_html_text(
             template=self.config.html_context_template, context=text, style=style
         )
-        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        img_array = render_html_as_image(html_text, image_resolution=self.config.image_resolution, channel=self.config.channel)
         return img_array
 
     def generate(
@@ -184,6 +154,7 @@ class SquadImageGenerator(object):
         context: str,
         font: CustomFont = None,
         method: str = "random_crop",
+        randomize_font: bool = True,
     ):
         """
         Generate an image from the given text and font
@@ -191,11 +162,11 @@ class SquadImageGenerator(object):
         :param font: The font to be used
         :param method: The method to be used for generating the image, one of ["random_crop", "concatenate", "list", "first_crop"]
         """
-        if font is None:
+        if font is None and randomize_font:
             font = self._get_random_custom_font()
-
+            
         question = self._generate_question(question)
-        context = self._generate_context(context, font)
+        context = self._generate_context(context, font, randomize_font)
         context_crop_size = self.config.image_height - question.shape[0]
 
         if method == "concatenate":
@@ -289,6 +260,10 @@ class SquadImageGenerator(object):
 
 
 class SquadDatasetForPixel(IterableDataset):
+    """
+    A class to represent the squad dataset for pixel
+    """
+    
     def __init__(
         self,
         config: Config,
@@ -305,6 +280,7 @@ class SquadDatasetForPixel(IterableDataset):
         self.attention_mask = self.image_generator.get_attention_mask(
             config.num_patches
         )
+        self.randomize_font = (split == "train")
 
     def set_epoch(self, epoch):
         """
@@ -317,11 +293,14 @@ class SquadDatasetForPixel(IterableDataset):
         )
 
     def _generate_scans_fron_sample(self, instance: Dict):
+        """
+        A method that generates the scans from a squad sample
+        """
         question = instance["question"]
         context = instance["context"]
 
         question_scan, context_scan = self.image_generator.generate(
-            question, context, method=self.config.long_context_generation_method
+            question, context, method=self.config.long_context_generation_method, randomize_font=self.randomize_font
         )
 
         mask = self.image_generator.generate_pixel_mask(
@@ -363,7 +342,7 @@ def main():
     wandb.init(config="configs/squad_config.yaml", mode="disabled")
     rng = np.random.RandomState(2)
 
-    transform = SyntheticDatasetTransform(wandb.config, rng=rng)
+    transform = SimpleTorchTransform(wandb.config, rng=rng)
     train_dataset = SquadDatasetForPixel(
         config=wandb.config, transform=transform, rng=rng, split="validation"
     )

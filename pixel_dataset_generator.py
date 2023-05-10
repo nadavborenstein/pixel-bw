@@ -9,10 +9,9 @@ from datasets import load_dataset, Dataset
 from albumentations.pytorch import ToTensorV2
 from typing import List, Tuple, Dict, Callable, Optional
 from wandb.sdk.wandb_config import Config
-from dataclasses import dataclass
 
 from utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
-from utils.dataset_utils import CustomFont
+from utils.dataset_utils import CustomFont, render_html_as_image
 from torch.utils.data import IterableDataset, get_worker_info
 
 import matplotlib.pyplot as plt
@@ -141,46 +140,6 @@ class ImageGenerator(object):
         html_text = template.render(pretraining_text=pretraining_text, **style)
         return html_text
 
-    def _render_html_as_image(self, html_text: str, channel: str = "GRAYSCALE"):
-        """
-        A function to render an HTML text as an image
-        """
-        font_config = FontConfiguration()  # TODO define once outside the function
-        html = HTML(string=html_text, base_url=".")
-        doc = html.render(font_config=font_config)
-        surface, width, height = doc.write_image_surface(
-            resolution=self.config.image_resolution
-        )
-        img_format = surface.get_format()
-
-        # This is BGRA channel in little endian (reverse)
-        if img_format != FORMAT_ARGB32:
-            raise RuntimeError(
-                f"Expect surface format to be 'cairocffi.FORMAT_ARGB32', but got {img_format}."
-                + "Please check the underlining implementation of 'weasyprint.document.Document.write_image_surface()'"
-            )
-
-        img_buffer = surface.get_data()
-        # Returns image array in "BGRA" channel
-        img_array = np.ndarray(
-            shape=(height, width, 4), dtype=np.uint8, buffer=img_buffer
-        )
-        if channel == "GRAYSCALE":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2GRAY)
-        elif channel == "RGBA":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGBA)
-        elif channel == "RGB":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGB)
-        elif channel == "BGRA":
-            return np.copy(img_array)
-        elif channel == "BGR":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
-        else:
-            valid_channels = ["GRAYSCALE", "RGB", "RGBA", "BGR", "BGRA"]
-            raise ValueError(
-                f"Invalid channel code {channel}. Valid values are: {valid_channels}."
-            )
-
     def _remove_leading_whitespace(self, img_array: np.ndarray) -> np.ndarray:
         non_white_pixels = np.argwhere(img_array < 255)
         min_indices = non_white_pixels.min(axis=0)
@@ -204,7 +163,7 @@ class ImageGenerator(object):
             font = self._get_random_custom_font()
         margins = self._get_random_margins()
         html_text = self.update_template(font, text, margins)
-        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        img_array = render_html_as_image(html_text, self.config.image_resolution, channel=self.config.channel)
         img_array = self._remove_leading_whitespace(img_array)
         img_array = img_array[: self.config.image_height, :]
         return img_array, font

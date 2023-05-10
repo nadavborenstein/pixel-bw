@@ -59,6 +59,11 @@ def translation(src, offset_x, offset_y):
     dst = cv2.warpAffine(src, trans_matrix, (cols, rows), borderValue=255)
     return dst.astype(np.uint8)
 
+def to_rgb(image, **kwargs):
+    """
+    Convert the image to RGB.
+    """
+    return np.stack([image, image, image], 2).astype("float32")
 
 class SyntheticDatasetTransform(object):
     def __init__(self, args: Config, rng: np.random.RandomState):
@@ -255,12 +260,6 @@ class SyntheticDatasetTransform(object):
         ] = hole
         return image
 
-    def to_rgb(self, image, **kwargs):
-        """
-        Convert the image to RGB.
-        """
-        return np.stack([image, image, image], 2).astype("float32")
-
     def add_noise_to_channels(self, image: np.ndarray, **kwargs) -> np.ndarray:
         """
         Add noise to the channels of the image, to make sure that it's not completely grayscale.
@@ -370,7 +369,7 @@ class SyntheticDatasetTransform(object):
                     limit=self.args.rotation_max_degrees,
                     p=self.args.rotation_probability,
                 ),
-                A.Lambda(image=self.to_rgb),
+                A.Lambda(image=to_rgb),
                 A.Compose(
                     [
                         A.Lambda(image=self.add_noise_to_channels),
@@ -387,6 +386,28 @@ class SyntheticDatasetTransform(object):
                 ToTensorV2(),
             ]
         )
+        if mask is None:
+            image = transformation(image=image)["image"]
+            return image
+        else:
+            transformed = transformation(image=image, mask=mask)
+            image = transformed["image"]
+            mask = transformed["mask"]
+            return image, mask
+
+
+
+class SimpleTorchTransform(object):
+    def __init__(self, args: Config, rng: np.random.RandomState):
+        self.args = args
+        self.rng = rng
+        
+    def __call__(self, image: np.ndarray, mask=None) -> np.ndarray: 
+        transformation = A.Compose([
+            A.Lambda(image=to_rgb),
+            ToTensorV2(),
+        ])
+        
         if mask is None:
             image = transformation(image=image)["image"]
             return image
