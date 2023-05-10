@@ -7,7 +7,11 @@ from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from utils.utils import crop_image, plot_arrays
 from utils.dataset_utils import CustomFont
-from utils.squad_utils import generate_mask_from_recangles, merge_rectangle_lines
+from utils.squad_utils import (
+    generate_pixel_mask_from_recangles,
+    merge_rectangle_lines,
+    convert_pixel_mask_to_patch_mask,
+)
 from datasets import load_dataset
 import numpy as np
 import pandas as pd
@@ -191,37 +195,30 @@ class SquadImageGenerator(object):
 
         question = self._generate_question(question)
         context = self._generate_context(context, font)
+        context_crop_size = self.config.image_height - question.shape[0]
 
         if method == "concatenate":
-            scan = np.concatenate((question, context), axis=0)
+            pass  # no need to do anything
         elif method == "first_crop":
-            concatenated = np.concatenate((question, context), axis=0)
-            scan = concatenated[: self.config.image_height, :]
+            context = context[:context_crop_size, :]
         elif method == "random_crop":
-            context_crop_size = self.config.image_height - question.shape[0]
             random_context_crop_loc = self.rng.randint(
                 0, context.shape[0] - context_crop_size
             )
-            random_context_crop = context[
+            context = context[
                 random_context_crop_loc : random_context_crop_loc + context_crop_size, :
             ]
-            scan = np.concatenate((question, random_context_crop), axis=0)
-            assert scan.shape[0] == self.config.image_height
         elif method == "list":
-            context_crop_size = self.config.image_height - question.shape[0]
-            scan = []
+            scans = []
             for i in range(0, context.shape[0], context_crop_size):
-                scan.append(
-                    np.concatenate(
-                        (question, context[i : i + context_crop_size, :]), axis=0
-                    )
-                )
+                scans.append(context[i : i + context_crop_size, :])
+            context = scans
         else:
             raise ValueError(
                 f"Invalid method {method}. Valid values are: ['random_crop', 'concatenate', 'list', 'first_crop']"
             )
 
-        return scan
+        return question, context
 
     def _locate_answer(self, data_dict: Dict, answer: str):
         all_text_offest_map = dict()
@@ -257,7 +254,7 @@ class SquadImageGenerator(object):
                 )
         return all_rectangles
 
-    def generate_label_mask(self, img_array: np.ndarray, answer: str):
+    def generate_pixel_mask(self, img_array: np.ndarray, answer: str):
         """
         Locate the suqad answer inside the scan using tesseract
         """
@@ -266,16 +263,14 @@ class SquadImageGenerator(object):
         )
         match, all_text_offest_map = self._locate_answer(data_dict, answer)
         if len(match) == 0:
-            return generate_mask_from_recangles(
-                [], img_array.shape, self.config.patch_base_size[0]
-            )
+            return generate_pixel_mask_from_recangles([], img_array.shape)
         else:
             matched_rectangles = self._generate_rectangle_for_matched_answer(
                 match, data_dict, all_text_offest_map
             )
             matched_rectangles = merge_rectangle_lines(matched_rectangles, tolerance=10)
-            return generate_mask_from_recangles(
-                matched_rectangles, img_array.shape, self.config.patch_base_size[0]
+            return generate_pixel_mask_from_recangles(
+                matched_rectangles, img_array.shape
             )
 
     def get_attention_mask(self, num_text_patches: int):
@@ -324,21 +319,33 @@ class SquadDatasetForPixel(IterableDataset):
         question = instance["question"]
         context = instance["context"]
 
-        scan = self.image_generator.generate(
+        question_scan, context_scan = self.image_generator.generate(
             question, context, method=self.config.long_context_generation_method
         )
 
-        patch_mask, mask = self.image_generator.generate_label_mask(
-            scan, instance["answers"]["text"][0]
+        mask = self.image_generator.generate_pixel_mask(
+            context_scan, instance["answers"]["text"][0]
         )
-        return scan, patch_mask, mask
+
+        return question_scan, context_scan, mask
 
     def __iter__(self) -> dict:
         for data in self.text_dataset:
-            scan, patch_mask, mask = self._generate_scans_fron_sample(data)
+            question_scan, context_scan, mask = self._generate_scans_fron_sample(data)
 
             if self.transform:
-                scan, mask = self.transform(scan, mask)
+                context_scan, mask = self.transform(context_scan, mask)
+
+            scan = np.concatenate([question_scan, context_scan], axis=0)
+            scan = scan[: self.config.image_height, :]
+
+            mask = np.concatenate([np.zeros_like(question_scan), mask], axis=0)
+            mask = mask[: self.config.image_height, :]
+            mask = convert_pixel_mask_to_patch_mask(
+                mask,
+                self.config.patch_base_size[0],
+                self.config.mask_patching_tolerance,
+            )
 
             inputs = {
                 "pixel_values": scan,
@@ -366,7 +373,8 @@ def main():
                 break
             im = batch["pixel_values"].astype("int32")
             mask = batch["label_mask"]
-            im[mask == 1] = im[mask == 1] - 30
+            mask = np.kron(mask, np.ones((16, 16)))
+            im[mask == 1] = im[mask == 1] - 40
             im = np.clip(im, 0, 255).astype("uint8")
             figures.append(im)
             counter += 1

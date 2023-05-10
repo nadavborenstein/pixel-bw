@@ -22,20 +22,52 @@ def merge_rectangles(rect1: Tuple[float], rect2: Tuple[float], tolerance=5):
         return None
 
 
-def generate_mask_from_recangles(
+def generate_pixel_mask_from_recangles(
+    rectangles: List[Tuple[int]], img_shape: Tuple[int]
+):
+    pixel_image = np.zeros(img_shape)
+    for rectangle in rectangles:
+        x = rectangle[0]
+        y = rectangle[1]
+        w = rectangle[2]
+        h = rectangle[3]
+        pixel_image[y : y + h + 1, x : x + w + 1] = 1
+    return pixel_image
+
+
+def convert_pixel_mask_to_patch_mask(
+    pixel_mask: np.ndarray, patch_size: int = 16, tolerance: float = 0.5
+):
+    """
+    A function to convert a pixel mask to a patch mask using its mean value
+    """
+    patch_mask = np.zeros(
+        (pixel_mask.shape[0] // patch_size, pixel_mask.shape[1] // patch_size)
+    )
+    for i in range(patch_mask.shape[0]):
+        for j in range(patch_mask.shape[1]):
+            patch_mask[i, j] = np.mean(
+                pixel_mask[
+                    i * patch_size : (i + 1) * patch_size,
+                    j * patch_size : (j + 1) * patch_size,
+                ]
+            )
+    patch_mask = np.where(patch_mask > tolerance, 1, 0)
+    return patch_mask
+
+
+def generate_patch_mask_from_recangles(
     rectangles: List[Tuple[int]], img_shape: Tuple[int], patch_size: int = 16
 ):
     patch_image = np.zeros((img_shape[0] // patch_size, img_shape[1] // patch_size))
     for rectangle in rectangles:
         x_patch = floor(rectangle[0] / patch_size)
         y_patch = floor(rectangle[1] / patch_size)
-        
+
         w_patch = round((rectangle[0] + rectangle[2]) / patch_size)
         h_patch = round((rectangle[1] + rectangle[3]) / patch_size)
 
-        patch_image[
-            y_patch : h_patch + 1, x_patch : w_patch + 1
-        ] = 1
+        patch_image[y_patch : h_patch + 1, x_patch : w_patch + 1] = 1
     return patch_image, np.kron(patch_image, np.ones((patch_size, patch_size)))
 
 

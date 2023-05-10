@@ -78,6 +78,9 @@ random_font_probability:
 max_l_dist_factor:
   desc: length factor for fuzzy string matching
   value: 0.4
+mask_patching_tolerance:
+  desc: tolerance of converting a pixel mask to patch mask (when a patch will be white)
+  value: 0.3
 
 # augmentations config
 bleed_through_probability:
