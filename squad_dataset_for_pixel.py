@@ -11,6 +11,7 @@ from utils.squad_utils import (
     convert_pixel_mask_to_patch_mask,
 )
 from datasets import load_dataset
+from tqdm.auto import tqdm
 import numpy as np
 import pandas as pd
 import fuzzysearch
@@ -221,10 +222,9 @@ class SquadImageGenerator(object):
     def _generate_rectangle_for_matched_answer(
         self, match, data_dict, all_text_offest_map
     ):
-
         start_id = all_text_offest_map[match[0].start]
         end_id = all_text_offest_map[match[0].end - 1]
-                
+
         all_rectangles = []
         for i in range(start_id, end_id + 1):
             if data_dict["text"][i].strip() != "":
@@ -363,15 +363,15 @@ def main():
     wandb.init(config="configs/squad_config.yaml", mode="disabled")
     rng = np.random.RandomState(2)
 
-    transform = SimpleTorchTransform(wandb.config, rng=rng)
+    transform = SyntheticDatasetTransform(wandb.config, rng=rng)
     train_dataset = SquadDatasetForPixel(
-        config=wandb.config, transform=transform, rng=rng, split="validation"
+        config=wandb.config, transform=transform, rng=rng, split="train"
     )
     figures = []
     for i in range(1):
         train_dataset.set_epoch(i)
         counter = 0
-        for batch in train_dataset:
+        for batch in tqdm(train_dataset, total=3000):
             if counter == 3000:
                 break
             # im = batch["pixel_values"].numpy().astype("float32").transpose(1, 2, 0)
@@ -380,7 +380,7 @@ def main():
             # im[mask == 1] = im[mask == 1] - 60
             # im = np.clip(im, 0, 255).astype("uint8")
             # figures.append(im)
-            # counter += 1
+            counter += 1
 
     im = plot_arrays(figures)
     im.save("results/sample_squad.png")

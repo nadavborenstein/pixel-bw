@@ -59,11 +59,13 @@ def translation(src, offset_x, offset_y):
     dst = cv2.warpAffine(src, trans_matrix, (cols, rows), borderValue=255)
     return dst.astype(np.uint8)
 
+
 def to_rgb(image, **kwargs):
     """
     Convert the image to RGB.
     """
     return np.stack([image, image, image], 2).astype("float32")
+
 
 class SyntheticDatasetTransform(object):
     def __init__(self, args: Config, rng: np.random.RandomState):
@@ -199,7 +201,9 @@ class SyntheticDatasetTransform(object):
         Add random holes in the image.
         """
         num_blobs = self.rng.randint(1, self.args.blobs_num_max)
-        mask_size = self.rng.randint(20, self.args.blobs_mask_size_max * 2)
+        mask_size = min(
+            self.rng.randint(20, self.args.blobs_mask_size_max * 2), image.shape[0] - 1
+        )
         blob_density = self.rng.randint(1, mask_size // 2)
         blob_std = self.rng.uniform(1, mask_size**0.5)
         num_samples = self.rng.randint(10, 60)
@@ -238,7 +242,9 @@ class SyntheticDatasetTransform(object):
         blobs = np.clip(blobs, 0, mask_size - 1).astype("int32")
         mask[blobs[:, 0], blobs[:, 1]] = 0
 
-        cloud_size = self.rng.randint(180, 300)
+        max_size = min(300, min(image.shape[0], image.shape[1]))
+        min_size = min(180, max_size - 1)
+        cloud_size = self.rng.randint(min_size, max_size)
         mask = Image.fromarray((mask * 255).astype("uint8"), mode="L")
         upsampled_mask = mask.resize((cloud_size, cloud_size))
         cloud = np.array(upsampled_mask) / 255
@@ -396,18 +402,19 @@ class SyntheticDatasetTransform(object):
             return image, mask
 
 
-
 class SimpleTorchTransform(object):
     def __init__(self, args: Config, rng: np.random.RandomState):
         self.args = args
         self.rng = rng
-        
-    def __call__(self, image: np.ndarray, mask=None) -> np.ndarray: 
-        transformation = A.Compose([
-            A.Lambda(image=to_rgb),
-            ToTensorV2(),
-        ])
-        
+
+    def __call__(self, image: np.ndarray, mask=None) -> np.ndarray:
+        transformation = A.Compose(
+            [
+                A.Lambda(image=to_rgb),
+                ToTensorV2(),
+            ]
+        )
+
         if mask is None:
             image = transformation(image=image)["image"]
             return image

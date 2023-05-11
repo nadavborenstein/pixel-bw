@@ -50,7 +50,7 @@ min_paragraph_length:
   value: 200
 font_list_path:
   desc: path to a csv containing a list of fonts to use
-  value: fonts/antique_fonts.csv
+  value: fonts/clear_fonts_with_size.csv
 max_snippet_length:
   desc: number of characters to take from each text sample to generate a scan from
   value: 20000
