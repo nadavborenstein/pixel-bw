@@ -103,7 +103,10 @@ class SyntheticDatasetTransform(object):
             line_width = self.rng.randint(2, self.args.random_line_max_width)
             if self.rng.rand() < 0.5:
                 line_length = self.rng.randint(
-                    self.args.random_horisontal_line_length_min, image.shape[0]
+                    min(
+                        self.args.random_horisontal_line_length_min, image.shape[0] - 1
+                    ),
+                    image.shape[0],
                 )
                 line_start = (image.shape[1] - line_length) // 2
             else:
@@ -175,7 +178,9 @@ class SyntheticDatasetTransform(object):
         Add random holes in the image.
         """
         num_blobs = self.rng.randint(1, self.args.blobs_num_max)
-        mask_size = self.rng.randint(10, self.args.blobs_mask_size_max)
+        mask_size = min(
+            self.rng.randint(10, self.args.blobs_mask_size_max), image.shape[0] - 1
+        )
         blob_density = self.rng.randint(1, mask_size // 2)
         blob_std = self.rng.uniform(1, mask_size**0.3)
         num_samples = self.rng.randint(500, 5000)
