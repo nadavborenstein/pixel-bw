@@ -1,59 +1,31 @@
 from weasyprint import HTML, CSS
 from weasyprint.fonts import FontConfiguration
-import matplotlib.pyplot as plt
-import cv2
-import numpy as np
+from dataset_transformations import SyntheticDatasetTransform
 from cairocffi import FORMAT_ARGB32
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
-import matplotlib.pyplot as plt
-import pytesseract
 from PIL import Image, ImageDraw as D
-
 from datasets import load_dataset, Dataset
-import fuzzysearch
 from albumentations.pytorch import ToTensorV2
-
 from typing import List, Tuple, Dict, Callable, Optional
-import numpy as np
-import copy
-import wandb
 from wandb.sdk.wandb_config import Config
-import pandas as pd
-from pprint import pprint
+
 from utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
+from utils.dataset_utils import CustomFont, render_html_as_image
 from torch.utils.data import IterableDataset, get_worker_info
-from dataclasses import dataclass
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import pytesseract
+import fuzzysearch
 import logging
+import wandb
 import torch
-from dataset_transformations import SyntheticDatasetTransform
-import timeit
+import copy
+import cv2
 
 logging.basicConfig(level=logging.INFO)
-
-
-@dataclass
-class CustomFont:
-    """
-    A class to represent a custom font
-    """
-
-    file_name: str
-    font_name: str
-    font_size: int
-
-    def __str__(self) -> str:
-        return f"Name: {self.font_name}\nSize: {self.font_size}\nPath: {self.file_name}"
-
-    def __getitem__(self, key: str) -> str:
-        if key == "file_name":
-            return self.file_name
-        elif key == "font_name":
-            return self.font_name
-        elif key == "font_size":
-            return self.font_size
-        else:
-            raise KeyError(f"Invalid key {key}")
 
 
 class ImageGenerator(object):
@@ -138,7 +110,7 @@ class ImageGenerator(object):
         font_name = random_font.split(".")[0].split("/")[1]
 
         font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 1.5) + self.rng.randint(-4, 5, 1)[0]
+        font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
 
         custom_font = CustomFont(
             file_name=random_font, font_name=font_name.title(), font_size=font_size
@@ -168,46 +140,6 @@ class ImageGenerator(object):
         html_text = template.render(pretraining_text=pretraining_text, **style)
         return html_text
 
-    def _render_html_as_image(self, html_text: str, channel: str = "GRAYSCALE"):
-        """
-        A function to render an HTML text as an image
-        """
-        font_config = FontConfiguration()  # TODO define once outside the function
-        html = HTML(string=html_text, base_url=".")
-        doc = html.render(font_config=font_config)
-        surface, width, height = doc.write_image_surface(
-            resolution=self.config.image_resolution
-        )
-        img_format = surface.get_format()
-
-        # This is BGRA channel in little endian (reverse)
-        if img_format != FORMAT_ARGB32:
-            raise RuntimeError(
-                f"Expect surface format to be 'cairocffi.FORMAT_ARGB32', but got {img_format}."
-                + "Please check the underlining implementation of 'weasyprint.document.Document.write_image_surface()'"
-            )
-
-        img_buffer = surface.get_data()
-        # Returns image array in "BGRA" channel
-        img_array = np.ndarray(
-            shape=(height, width, 4), dtype=np.uint8, buffer=img_buffer
-        )
-        if channel == "GRAYSCALE":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2GRAY)
-        elif channel == "RGBA":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGBA)
-        elif channel == "RGB":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2RGB)
-        elif channel == "BGRA":
-            return np.copy(img_array)
-        elif channel == "BGR":
-            return cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
-        else:
-            valid_channels = ["GRAYSCALE", "RGB", "RGBA", "BGR", "BGRA"]
-            raise ValueError(
-                f"Invalid channel code {channel}. Valid values are: {valid_channels}."
-            )
-
     def _remove_leading_whitespace(self, img_array: np.ndarray) -> np.ndarray:
         non_white_pixels = np.argwhere(img_array < 255)
         min_indices = non_white_pixels.min(axis=0)
@@ -231,28 +163,10 @@ class ImageGenerator(object):
             font = self._get_random_custom_font()
         margins = self._get_random_margins()
         html_text = self.update_template(font, text, margins)
-        img_array = self._render_html_as_image(html_text, channel=self.config.channel)
+        img_array = render_html_as_image(html_text, self.config.image_resolution, channel=self.config.channel)
         img_array = self._remove_leading_whitespace(img_array)
         img_array = img_array[: self.config.image_height, :]
         return img_array, font
-
-    def _crop_image(self, img):
-        """
-        Crops an image to the smallest possible size containing all non-white pixels.
-        Parameters:
-            img (np.ndarray): A numpy array representing the image to crop.
-        Returns:
-            np.ndarray: The cropped image.
-        """
-        # Find the indices of all non-white pixels.
-        non_white_pixels = np.argwhere(img < 255)
-
-        # Find the minimum and maximum indices in each dimension.
-        max_indices = non_white_pixels.max(axis=0)
-
-        # Crop the image to the smallest possible size containing all non-white pixels.
-        cropped_img = img[: max_indices[0] + 2, :]
-        return cropped_img
 
     def check_if_can_concatenate(self, img):
         non_white_pixels = np.argwhere(img < 255)
@@ -267,7 +181,7 @@ class ImageGenerator(object):
         """
         A method that concatenates two images vertically
         """
-        concatenated = np.concatenate((self._crop_image(image1), image2), axis=0)
+        concatenated = np.concatenate((crop_image(image1), image2), axis=0)
         concatenated = concatenated[: self.config.image_height, :]
         return concatenated
 
@@ -365,6 +279,9 @@ class PretrainingDataset(IterableDataset):
         self.text_dataset = text_dataset
         self.rng = rng
         self.image_generator = ImageGenerator(config, rng)
+        self.attention_mask = self.image_generator.get_attention_mask(
+            self.config.num_patches
+        )
 
     def set_epoch(self, epoch):
         """
@@ -431,21 +348,18 @@ class PretrainingDataset(IterableDataset):
             mask, patch_mask = self.image_generator.generate_random_mask(
                 image.shape[1:]
             )
-            attention_mask = self.image_generator.get_attention_mask(
-                self.config.num_patches
-            )
             inputs = {
                 "pixel_values": image,
                 "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),
                 "num_patches": self.config.num_patches,
-                "attention_mask": attention_mask,
+                "attention_mask": self.attention_mask,
             }
 
             yield inputs
 
 
 def main():
-    wandb.init(config="configs/config.yaml", mode="disabled")
+    wandb.init(config="configs/pretraining_config.yaml", mode="disabled")
     rng = np.random.RandomState(2)
     text_dataset = load_dataset("wikipedia", "20220301.simple")
 

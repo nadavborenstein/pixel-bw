@@ -6,14 +6,10 @@
     {% import "macro/dimension.css.jinja" as dimension %}
         {{ dimension.pixel_paper(width, height, top_margin, right_margin, bottom_margin, left_margin) }}
     {% import "macro/text.css.jinja" as text %}
-    {% for custom_font in custom_fonts %}
-        {{ text.load_font(custom_font['file_name'], custom_font['font_name']) }}
-    {% endfor %}
         {{ text.set_font(font_family, font_size) }}
         {{ text.set_hyphenation(hyphenate) }}
         {{ text.set_text_align(text_align) }}
-        {{ text.set_question_style(font_family_question, font_size_question, line_height_question) }}
-        {{ text.set_context_style(font_family_context, font_size_context, line_height_context, word_break, line_break) }}
+        {{ text.set_question_style(font_family, font_size, line_height) }}
     {# Element-Specific Style #}
     {%- include "text_block.css.jinja" with context %}
 {% endblock style %}

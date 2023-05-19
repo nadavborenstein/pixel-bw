@@ -28,8 +28,8 @@
 
 {% macro set_question_style(font_family, font_size, line_height) -%}
     div.question {
-        font-family: "{{ font_family }}";
-        font-size: "{{ font_size }}";
+        font-family: {{ font_family }};
+        font-size: {{ font_size }};
         {% if line_height %}
             line-height: {{ line_height }};
         {% endif %}
@@ -38,8 +38,8 @@
 
 {% macro set_context_style(font_family, font_size, line_height, word_break, line_break) -%}
     div.context {
-        font-family: "{{ font_family }}";
-        font-size: "{{ font_size }}";
+        font-family: {{ font_family }};
+        font-size: {{ font_size }};
         {% if line_height %}
             line-height: {{ line_height }};
         {% endif %}

@@ -121,7 +121,7 @@ def merge_rectangle_lines(rectangles: List[Tuple[float]], tolerance=10):
     return merged_lines
 
 
-def crop_image(img):
+def crop_image(img, vertical: bool = True, horizontal: bool = False):
     """
     Crops an image to the smallest possible size containing all non-white pixels.
 
@@ -136,13 +136,18 @@ def crop_image(img):
     non_white_pixels = np.argwhere(img < 255)
 
     # Find the minimum and maximum indices in each dimension.
-    min_indices = non_white_pixels.min(axis=0)
-    max_indices = non_white_pixels.max(axis=0)
+    min_indices_vertical = non_white_pixels.min(axis=0)
+    max_indices_vertical = non_white_pixels.max(axis=0)
+
+    min_indices_horizontal = non_white_pixels.min(axis=1)
+    max_indices_horizontal = non_white_pixels.max(axis=1)
 
     # Crop the image to the smallest possible size containing all non-white pixels.
-    cropped_img = img[min_indices[0] : max_indices[0] + 1, :]
-
-    return cropped_img
+    if vertical:
+        img = img[min_indices_vertical[0] : max_indices_vertical[0] + 1, :]
+    if horizontal:
+        img = img[:, min_indices_horizontal[0] : max_indices_horizontal[0] + 1]
+    return img
 
 
 def embed_image(img: np.ndarray, width=368, height=368):
@@ -218,7 +223,10 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
         c: int = i % cols
         ax = axes[r][c]
         # plot the array as an image
-        ax.imshow(array)
+        if len(shape) == 2:
+            ax.imshow(array, cmap="gray")
+        else:
+            ax.imshow(array)
         # set the title as the index of the array
         ax.set_title(f"Array {i}")
     # save the figure to a buffer
