@@ -1,0 +1,14 @@
+path,hasLower,hasNums,hasBrackets,base_size
+fonts/AntiqueNo14.ttf,True,True,True,26
+fonts/CaslonAntique-Bold.ttf,True,True,True,25
+fonts/CaslonAntique-BoldItalic.ttf,True,True,True,25
+fonts/CaslonAntique-Italic.ttf,True,True,True,24
+fonts/CaslonAntique.ttf,True,True,True,25
+fonts/MayflowerAntique.ttf,True,True,True,24
+fonts/PackardAntique-Bold.ttf,True,True,True,24
+fonts/PackardAntique.ttf,True,True,True,24
+fonts/PowellAntique-Bold.ttf,True,True,True,25
+fonts/PowellAntique.ttf,True,True,True,26
+fonts/RomanAntique-Italic.ttf,True,True,True,25
+fonts/RomanAntique.ttf,True,True,True,25
+fonts/effloresce antique.ttf,True,True,True,26
