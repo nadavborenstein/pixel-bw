@@ -1,0 +1,19 @@
+{# Copyright (c) Microsoft Corporation. All rights reserved. #}
+
+{% macro set_page_dimension(width, height, top_margin, right_margin, bottom_margin, left_margin) -%}
+    @page {
+        size: {{ width }} {{ height }};
+        margin-top: {{ top_margin }};
+        margin-bottom: {{ bottom_margin }};
+        margin-right: {{ right_margin }};
+        margin-left: {{ left_margin }};
+    }
+{% endmacro %}
+
+{% macro a4_paper(margin=2) %}
+    {{ set_page_dimension(21, 30, margin) }}
+{% endmacro %}
+
+{% macro pixel_paper(width=10, height=10, top_margin=0, right_margin=0, bottom_margin=0, left_margin=0) %}
+    {{ set_page_dimension(width, height, top_margin, right_margin, bottom_margin, left_margin) }}
+{% endmacro %}
