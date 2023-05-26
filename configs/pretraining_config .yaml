@@ -50,7 +50,7 @@ max_snippet_length:
   value: 20000
 mask_block_probability:
   desc: ratio of patches to be masked
-  value: 0.25
+  value: 0.26
 mask_block_size:
   desc: size of each masked block, each made of patches of size patch_base_size
   value: [32, 16]
