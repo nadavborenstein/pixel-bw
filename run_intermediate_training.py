@@ -61,7 +61,7 @@ from configs.utils import (
 )
 
 """ Pre-training a PIXEL model as an MAE (masked autoencoder)"""
-os.environ["PATH"] += ":/home/knf792/apps/lfs/bin"
+# os.environ["PATH"] += ":/home/knf792/apps/lfs/bin"
 
 logger = logging.getLogger(__name__)
 

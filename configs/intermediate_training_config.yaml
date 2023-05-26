@@ -27,7 +27,7 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/pixel-intermediate
+  value: Nadav/pixel-intermediate-final
 hub_strategy:
   desc: when to push to hub
   value: checkpoint
@@ -47,7 +47,7 @@ epochs:
   value: 1
 max_steps:
   desc: maxumim number of training steps
-  value: 1000000
+  value: 100000
 squad_version:
   desc: squad dataset version (1 or 2)
   value: 1
@@ -65,16 +65,16 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 42
+  value: 86
 per_device_eval_batch_size:
   desc: evaluation batch size
-  value: 16
+  value: 32
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
-  value: 2
+  value: 1
 base_learning_rate:
   desc: base learning rate
-  value: 1.5e-5
+  value: 1.5e-4
 lr_scheduler_type:
   desc: type of the lr scheduler
   value: "cosine"
@@ -86,24 +86,21 @@ evaluation_strategy:
   value: "steps"
 eval_steps:
   desc: frequency of model evaluation
-  value: 1000
-ddp_find_unused_parameters:
-  desc: not sure, something with ddp obviously
-  value: False
+  value: 5000
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 8
+  value: 43
 
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_final_outputs"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: True
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_final_outputs"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
@@ -115,7 +112,7 @@ save_stategy:
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 5000
+  value: 10000
 report_to:
   desc: tool to report to
   value: ["wandb"]
@@ -156,7 +153,7 @@ train_dataset_configs:
   value: ["20220301.en", "plain_text"]
 num_test_images:
   desc: number of images in test dataset
-  value: 500
+  value: 5000
 label_column_name: 
   desc: name of the label column
   value: "label"

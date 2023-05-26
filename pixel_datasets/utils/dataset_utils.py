@@ -36,16 +36,16 @@ class CustomFont:
             raise KeyError(f"Invalid key {key}")
 
 
-def render_html_as_image(html_text: str, image_resolution: int = 96, channel: str = "GRAYSCALE"):
+def render_html_as_image(
+    html_text: str, image_resolution: int = 96, channel: str = "GRAYSCALE"
+):
     """
     A function to render an HTML text as an image
     """
     font_config = FontConfiguration()  # TODO define once outside the function
     html = HTML(string=html_text, base_url=".")
     doc = html.render(font_config=font_config)
-    surface, width, height = doc.write_image_surface(
-        resolution=image_resolution
-    )
+    surface, width, height = doc.write_image_surface(resolution=image_resolution)
     img_format = surface.get_format()
 
     # This is BGRA channel in little endian (reverse)
@@ -57,9 +57,7 @@ def render_html_as_image(html_text: str, image_resolution: int = 96, channel: st
 
     img_buffer = surface.get_data()
     # Returns image array in "BGRA" channel
-    img_array = np.ndarray(
-        shape=(height, width, 4), dtype=np.uint8, buffer=img_buffer
-    )
+    img_array = np.ndarray(shape=(height, width, 4), dtype=np.uint8, buffer=img_buffer)
     if channel == "GRAYSCALE":
         return cv2.cvtColor(img_array, cv2.COLOR_BGRA2GRAY)
     elif channel == "RGBA":
