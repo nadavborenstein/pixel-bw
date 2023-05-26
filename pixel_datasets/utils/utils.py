@@ -1,13 +1,10 @@
-from weasyprint import HTML, CSS
 from weasyprint.fonts import FontConfiguration
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 from cairocffi import FORMAT_ARGB32
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML
 import matplotlib.pyplot as plt
-import pytesseract
 from PIL import Image, ImageDraw as D
 
 from datasets import load_dataset

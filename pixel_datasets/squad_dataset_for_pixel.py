@@ -2,7 +2,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
-from utils.utils import crop_image, plot_arrays
+from configs.utils import crop_image, plot_arrays
 from utils.dataset_utils import CustomFont, render_html_as_image
 from dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
 from utils.squad_utils import (
