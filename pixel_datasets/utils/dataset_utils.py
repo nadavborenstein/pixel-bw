@@ -73,3 +73,20 @@ def render_html_as_image(
         raise ValueError(
             f"Invalid channel code {channel}. Valid values are: {valid_channels}."
         )
+
+
+def get_random_custom_font(font_list, rng) -> CustomFont:
+    """
+    A method that returns a random custom font from the font list
+    """
+    random_index = rng.randint(0, font_list.shape[0])
+    random_font = font_list["path"][random_index]
+    random_font = random_font.replace(" ", "_")  # fixing spaces in the path
+    font_name = random_font.split(".")[0].split("/")[1]
+
+    font_size = font_list["base_size"][random_index]
+    font_size = int(font_size * rng.uniform(0.7, 1.3))
+    custom_font = CustomFont(
+        file_name=random_font, font_name=font_name.title(), font_size=font_size
+    )
+    return custom_font

@@ -1,0 +1,306 @@
+# config-defaults.yaml
+
+# meta config
+run_name:
+  desc: name of the run
+  value: <NON_OPTIONAL>
+task:
+  desc: glue task name. One of [cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli]
+  value: mnli
+use_auth_token:
+  desc: auth token for wandb
+  value: <RETRACTED>
+do_train:
+  desc: whether to train the model. A non optinoal setting
+  value: <OPTINAL>
+do_eval:
+  desc: whether to evaluate the model. A non optinoal setting
+  value: <OPTINAL>
+resume_from_checkpoint:
+  desc: whether to resume from last saved checkpoint
+  value: none
+model_revision:
+  desc: The specific model version to use (can be a branch name, tag name or commit id)
+  value: main
+push_to_hub:
+  desc: whether to push the model to the hub after training
+  value: True
+streaming:
+  desc: whether to load all the datasets or to stream them
+  value: False
+hub_model_id:
+  desc: model id on huggingface
+  value: Nadav/pixel-intermediate
+hub_strategy:
+  desc: when to push to hub
+  value: checkpoint
+hub_token:
+  desc: token for huggingface
+  value: <RETRACTED>
+hub_private_repo:
+  desc: whether the hub should be a private repo
+  value: True
+model_cache_dir:
+  desc: model cache dir
+  value: none
+
+# training config
+epochs:
+  desc: Number of epochs to train over
+  value: 1
+max_steps:
+  desc: maxumim number of training steps
+  value: 1000000
+squad_version:
+  desc: squad dataset version (1 or 2)
+  value: 1
+seed:
+  desc: random_seed
+  value: 42
+fp16:
+  desc: whether to train with half persicion
+  value: True
+half_precision_backend:
+  desc: half precision backend
+  value: amp
+device:
+  desc: device to train on, cpu or cuda
+  value: "cuda"
+per_device_train_batch_size:
+  desc: training batch size
+  value: 42
+per_device_eval_batch_size:
+  desc: evaluation batch size
+  value: 16
+gradient_accumulation_steps:
+  desc: number of gradient accumulation steps
+  value: 2
+base_learning_rate:
+  desc: base learning rate
+  value: 1.5e-4
+lr_scheduler_type:
+  desc: type of the lr scheduler
+  value: "cosine"
+warmup_ratio:
+  desc: ratio used for warmup
+  value: 0
+evaluation_strategy:
+  desc: when to evaluate the model, in steps
+  value: "steps"
+eval_steps:
+  desc: frequency of model evaluation
+  value: 1000
+ddp_find_unused_parameters:
+  desc: not sure, something with ddp obviously
+  value: False
+dataloader_num_workers:
+  desc: number of dataset workers
+  value: 8
+task_name:
+  desc: name of the task, for model card
+  value: "squad"
+
+
+# logging config
+output_dir:
+  desc: where to save the output of the run
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+overwrite_output_dir:
+  desc: whether to overwrite the output dir
+  value: True
+job_dir:
+  desc: where to store wandb stuff
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+logging_strategy:
+  desc: logging strategy of the trainer
+  value: "steps"
+logging_steps:
+  desddc: logging frequency, in steps
+  value: 500
+save_stategy:
+  desc: save strategy of the trainer
+  value: steps
+save_steps:
+  desc: frequencey of saving the model
+  value: 5000
+report_to:
+  desc: tool to report to
+  value: ["wandb"]
+
+# model config
+dropout_prob:
+  desc: dropout probability
+  value: 0.1
+model_config_name:
+  desc: Pretrained config name or path if not the same as model_name_or_path
+  value: none
+model_name_or_path:
+  desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
+  value: Nadav/PretrainedPHD
+norm_pix_loss:
+  desc: Whether or not to train with normalized pixel values as target.
+  value: True
+
+
+# dataset config "Nadav/CaribbeanScans"
+dataset_cache_dir:
+  desc: where to cache the datasets
+  value: "/projects/copenlu/data/nadav/cache"
+dataset_name:
+  desc: the dataset used for intermediate training
+  value: Nadav/pixel_squad
+label_column_name: 
+  desc: name of the label column
+  value: "label"
+number_of_labels:
+  desc: number of possible labels
+  value: 2
+
+
+# image generation settings
+html_template:
+  desc: template for generating an HTML file from a piece of text
+  value: "glue_block.html.jinja"
+randomize_font:
+  desc: whether to use a random font or just Ariel
+  value: True
+use_same_font_for_both_sentences:
+  desc: whether to use the name font for both sentences
+  value: False
+max_margins:
+  desc: maximum size of margin at the edges of the scan = [left, right, top, bottom]
+  value: [15, 15, 3, 0]
+margins_probability:
+  desc: probabity of adding white margins to the scan
+  value: 0.4
+image_resolution:
+  desc: DPI of the generated image
+  value: 96
+channel:
+  desc: format of the generated image
+  value: "GRAYSCALE"
+image_height:
+  desc: height of the image
+  value: 368
+image_width:
+  desc: width of the image
+  value: 368
+maximal_white_space_in_image:
+  desc: maximal allowed white margin at the bottom of the image
+  value: 68
+max_seq_length:
+  desc: maximal sequence length in tokens
+  value: 529
+min_paragraph_length:
+  desc: minimal length of text in paragraph, in characters
+  value: 200
+font_list_path:
+  desc: path to a csv containing a list of fonts to use
+  value: pixel_datasets/fonts/clear_fonts_with_size.csv # pixel_datasets/fonts/antique_fonts.csv
+max_snippet_length:
+  desc: number of characters to take from each text sample to generate a scan from
+  value: 20000
+mask_block_probability:
+  desc: ratio of patches to be masked
+  value: 0.25
+mask_ratio:
+  desc: ratio of patches to be masked
+  value: 0.25
+mask_block_size:
+  desc: size of each masked block, each made of patches of size patch_base_size
+  value: [32, 16]
+mask_max_merged_blocks_size:
+  desc: maximum number of masked blocks merged together on each axis
+  value: [2, 6]
+mask_min_merged_blocks_size:
+  desc: minimum number of masked blocks merged together on each axis
+  value: [1, 2]
+patch_base_size:
+  desc: size in pixels of each patch
+  value: [16, 16]
+num_patches: 
+  desc: number of patches in each scan
+  value: 529
+random_font_probability:
+  desc: probability to replace font mid scan
+  value: 0.5
+embed_real_image:
+  desc: Whether to embed real images in white background
+  value: False
+label_names:
+  desc: Not sure...
+  value: ["pixel_values"]
+remove_unused_columns:
+  desc: not sure...
+  value: False
+
+# augmentations config
+bleed_through_probability:
+  desc: probability to apply bleed-through effect
+  value: 0.15
+max_bleed_offset:
+  desc: maximal translation offset for bleed-through effect
+  value: 10
+bleed_alpha_mean:
+  desc: mean alpha value (transperancy) of bleed effect
+  value: 0.86
+bleed_alpha_std:
+  desc: alpha value std (transperancy) of bleed effect
+  value: 0.05
+bleed_gamma:
+  desc: gamma value (not sure what it does) for bleed effect
+  value: 0.0
+random_line_length_min:
+  desc: min length of random lines
+  value: 250
+random_horisontal_line_length_min:
+  desc: min length of random lines
+  value: 50
+random_line_max_width:
+  desc: maximum width in pixels of random line
+  value: 5
+salt_and_pepper_pixel_max_probability:
+  desc: intensity of salt and pepper noise
+  value: 0.01
+blobs_num_max:
+  desc: the greater the number, the less spherical the blob is
+  value: 6
+blobs_mask_size_max:
+  desc: max size of the water damage marks
+  value: 100
+channel_noise_std:
+  desc: for converting b&w image to color image, determines the "colorfulness" of it
+  value: 0.03
+random_line_horizontal_probability:
+  desc: probability of adding random horizontal line
+  value: 0.2
+random_line_vertical_probability:
+  desc: probability of adding random vertical line
+  value: 0.3
+noise_probability:
+  desc: probability of applying pixel level noise
+  value: 0.3
+cloud_probability:
+  desc: probability of adding random water damage to the figure
+  value: 0.3
+blobs_probability:
+  desc: probability of adding large black holes to the figure
+  value: 0.1
+pepper_spots_probability:
+  desc: probability of adding small black holes to the figure
+  value: 0.3
+blur_max_sigma:
+  desc: Maximum sigma of the gaussian blur
+  value: 3
+blur_probability:
+  desc: probability of applying blur
+  value: 0.3
+rotation_max_degrees:
+  desc: Maximum rotation angle in degrees
+  value: 5.0
+rotation_probability:
+  desc: probability of applying rotation
+  value: 0.2
+color_jitter_probability:
+  desc: color_jitter_probability
+  value: 0.4

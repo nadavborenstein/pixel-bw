@@ -2,22 +2,29 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from torch.utils.data import Dataset
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
-from configs.utils import crop_image, plot_arrays
-from utils.dataset_utils import CustomFont, render_html_as_image
-from dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
-from utils.squad_utils import (
-    generate_pixel_mask_from_recangles,
-    merge_rectangle_lines,
-    convert_pixel_mask_to_patch_mask,
-)
+from .utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
+from .utils.dataset_utils import CustomFont, render_html_as_image, get_random_custom_font
+from .dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
 from datasets import load_dataset
 from tqdm.auto import tqdm
 import numpy as np
 import pandas as pd
-import logging
 import torch
 import wandb
 import copy
+
+
+TASK_TO_KEYS = {
+    "cola": ("sentence", None),
+    "mnli": ("premise", "hypothesis"),
+    "mrpc": ("sentence1", "sentence2"),
+    "qnli": ("question", "sentence"),
+    "qqp": ("question1", "question2"),
+    "rte": ("sentence1", "sentence2"),
+    "sst2": ("sentence", None),
+    "stsb": ("sentence1", "sentence2"),
+    "wnli": ("sentence1", "sentence2"),
+}
 
 
 class GlueImageGenerator(object):
@@ -48,47 +55,93 @@ class GlueImageGenerator(object):
         self.config = config
         self.rng = rng
         self.font_list = pd.read_csv(config.font_list_path)
+        self.template = self._preload_template()
 
-    def _get_updated_style_config(self, custom_font: CustomFont, margins: List):
+    def _preload_template(self):
+        dummy_fonts = [
+            CustomFont(
+                file_name=f"DUMMY_FILE_{i}",
+                font_name=f"DUMMY_NAME_{i}",
+                font_size=f"DUMMY_SIZE_{i}",
+            )
+            for i in [1, 2]
+        ]
+
+        dummy_margins = [
+            [
+                f"DUMMY_LEFT_{i}",
+                f"DUMMY_RIGHT_{i}",
+                f"DUMMY_TOP_{i}",
+                f"DUMMY_BOTTOM_{i}",
+            ]
+            for i in [1, 2]
+        ]
+        dummy_style = self._get_updated_style_config(dummy_fonts, dummy_margins)
+        html_template = self._generate_html_text(
+            self.config.html_template,
+            dummy_style,
+            "DUMMY_SENTENCE_1",
+            "DUMMY_SENTENCE_2",
+        )
+        return html_template
+
+    def update_template(
+        self, fonts: List[CustomFont], sentences: List[str], margins: List[List[int]]
+    ):
+        """
+        A function to update the template with new font and text
+        """
+        html_template = self.template
+        for i in [1, 2]:
+            html_template = html_template.replace(
+                f"DUMMY_FILE_{i}", fonts[i - 1].file_name
+            )
+            html_template = html_template.replace(
+                f"DUMMY_NAME_{i}", fonts[i - 1].font_name
+            )
+            html_template = html_template.replace(
+                f"DUMMY_SIZE_{i}", str(fonts[i - 1].font_size)
+            )
+            html_template = html_template.replace(
+                f"DUMMY_LEFT_{i}", str(margins[i - 1][0])
+            )
+            html_template = html_template.replace(
+                f"DUMMY_RIGHT_{i}", str(margins[i - 1][1])
+            )
+            html_template = html_template.replace(
+                f"DUMMY_TOP_{i}", str(margins[i - 1][2])
+            )
+            html_template = html_template.replace(
+                f"DUMMY_BOTTOM_{i}", str(margins[i - 1][3])
+            )
+            html_template = html_template.replace(
+                f"DUMMY_SENTENCE_{i}", sentences[i - 1]
+            )
+        return html_template
+
+    def _get_updated_style_config(
+        self, custom_fonts: List[CustomFont], margins: List[List]
+    ):
         """
         A function to get the updated style config from wandb
         """
         style = copy.deepcopy(self.DEFAULT_COMBINATIONS)
-
-        if custom_font is not None:
-            style["custom_fonts"] = [custom_font]
-            style["font_family"] = custom_font.font_name
-            style["font_size"] = f"{custom_font.font_size}px"
-        style["left_margin"] = f"{margins[0]}px"
-        style["right_margin"] = f"{margins[1]}px"
-        style["top_margin"] = f"{margins[2]}px"
-        style["bottom_margin"] = f"{margins[3]}px"
+        style["custom_fonts"] = custom_fonts
+        for i in [1, 2]:
+            style[f"font_family_{i}"] = custom_fonts[i - 1].font_name
+            style[f"font_size_{i}"] = f"{custom_fonts[i - 1].font_size}px"
+            style[f"left_margin_{i}"] = f"{margins[i - 1][0]}px"
+            style[f"right_margin_{i}"] = f"{margins[i - 1][1]}px"
+            style[f"top_margin_{i}"] = f"{margins[i - 1][2]}px"
+            style[f"bottom_margin_{i}"] = f"{margins[i - 1][3]}px"
 
         for key in style:
             if key in wandb.config:
                 style[key] = [wandb.config[key]]
         return style
 
-    def _get_random_custom_font(self) -> CustomFont:
-        """
-        A method that returns a random custom font from the font list
-        """
-        random_index = self.rng.randint(0, self.font_list.shape[0])
-        random_font = self.font_list["path"][random_index]
-        random_font = random_font.replace(" ", "_")  # fixing spaces in the path
-        font_name = random_font.split(".")[0].split("/")[1]
-
-        font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
-        custom_font = CustomFont(
-            file_name=random_font, font_name=font_name.title(), font_size=font_size
-        )
-        return custom_font
 
     def _get_random_margins(self) -> List[int]:
-        """
-        Get random margins
-        """
         if self.rng.rand() < self.config.margins_probability:
             margins = self.rng.randint(
                 np.zeros(4, dtype=int),
@@ -100,163 +153,42 @@ class GlueImageGenerator(object):
         return margins
 
     def _generate_html_text(
-        self, template: str, style: Dict, question: str = None, context: str = None
+        self, template: str, style: Dict, sentence_1: str, sentence_2: str
     ) -> str:
-        """
-        A function to generate an HTML text from the given template and style
-        """
         env = Environment(
-            loader=FileSystemLoader("./templates/"),
+            loader=FileSystemLoader("pixel_datasets/templates/"),
             autoescape=select_autoescape(["html", "xml"]),
         )
         template = env.get_template(template)
-        if question is None and context is not None:
-            html_text = template.render(context=context, **style)
-        elif context is None and question is not None:
-            html_text = template.render(question=question, **style)
-        else:
-            raise ValueError(
-                "One of 'question' or 'context' should be provided to the function, and only one"
-            )
+        html_text = template.render(
+            sentence_1=sentence_1, sentence_2=sentence_2, **style
+        )
         return html_text
 
-    def _generate_question(self, text: str, font: CustomFont = None) -> np.ndarray:
-        """
-        Generate a question image from the given text and font
-        """
-        if font is None:
-            font = CustomFont(file_name="Ariel", font_name="Ariel", font_size=28)
-        margins = [1, 1, 1, 1]
-        style = self._get_updated_style_config(font, margins)
-        html_text = self._generate_html_text(
-            template=self.config.html_question_template, question=text, style=style
-        )
-        img_array = render_html_as_image(
-            html_text,
-            image_resolution=self.config.image_resolution,
-            channel=self.config.channel,
-        )
-        img_array = crop_image(img_array)
-        return img_array
-
-    def _generate_context(
-        self, text: str, font: CustomFont, randomize_font: bool = True
-    ) -> np.ndarray:
-        """
-        Generate a context image from the given text and font
-        """
-        margins = self._get_random_margins() if randomize_font else [1, 1, 1, 0]
-        style = self._get_updated_style_config(font, margins)
-        html_text = self._generate_html_text(
-            template=self.config.html_context_template, context=text, style=style
-        )
-        img_array = render_html_as_image(
-            html_text,
-            image_resolution=self.config.image_resolution,
-            channel=self.config.channel,
-        )
-        return img_array
-
-    def generate(
-        self,
-        question: str,
-        context: str,
-        font: CustomFont = None,
-        method: str = "random_crop",
-        randomize_font: bool = True,
-    ):
+    def generate(self, sentence_1, sentence_2, fonts: List[CustomFont] = None):
         """
         Generate an image from the given text and font
         :param text: The text to be rendered
         :param font: The font to be used
-        :param method: The method to be used for generating the image, one of ["random_crop", "concatenate", "list", "first_crop"]
         """
-        if font is None and randomize_font:
-            font = self._get_random_custom_font()
-
-        question = self._generate_question(question)
-        context = self._generate_context(context, font, randomize_font)
-        context_crop_size = self.config.image_height - question.shape[0]
-
-        if method == "concatenate":
-            pass  # no need to do anything
-        elif method == "first_crop":
-            context = context[:context_crop_size, :]
-        elif method == "random_crop":
-            random_context_crop_loc = self.rng.randint(
-                0, context.shape[0] - context_crop_size
-            )
-            context = context[
-                random_context_crop_loc : random_context_crop_loc + context_crop_size, :
-            ]
-        elif method == "list":
-            scans = []
-            for i in range(0, context.shape[0], context_crop_size):
-                scans.append(context[i : i + context_crop_size, :])
-            context = scans
+        if fonts is None:
+            if self.config.use_same_font_for_both_sentences:
+                font = get_random_custom_font(self.font_list, self.rng)
+                margin = self._get_random_margins()
+                fonts = [font, font]
+                margins = [margin, margin]
+            else:
+                fonts = [get_random_custom_font(self.font_list, self.rng),
+                         get_random_custom_font(self.font_list, self.rng)]
+                margins = [self._get_random_margins(), self._get_random_margins()]
         else:
-            raise ValueError(
-                f"Invalid method {method}. Valid values are: ['random_crop', 'concatenate', 'list', 'first_crop']"
-            )
-
-        return question, context
-
-    def _locate_answer(self, data_dict: Dict, answer: str):
-        all_text_offest_map = dict()
-        all_texts = ""
-        for i, text in enumerate(data_dict["text"]):
-            if text.strip() != "":
-                for j in range(len(text) + 1):
-                    all_text_offest_map[len(all_texts) + j] = i
-                all_texts += text + " "
-
-        match = fuzzysearch.find_near_matches(
-            answer,
-            all_texts,
-            max_l_dist=int(len(answer) ** self.config.max_l_dist_factor),
+            margins = [self._get_random_margins(), self._get_random_margins()]
+        html_text = self.update_template(fonts, [sentence_1, sentence_2], margins)
+        img_array = render_html_as_image(
+            html_text, self.config.image_resolution, channel=self.config.channel
         )
-        return match, all_text_offest_map
-
-    def _generate_rectangle_for_matched_answer(
-        self, match, data_dict, all_text_offest_map
-    ):
-        start_id = all_text_offest_map[match[0].start]
-        end_id = all_text_offest_map[match[0].end - 1]
-
-        all_rectangles = []
-        for i in range(start_id, end_id + 1):
-            if data_dict["text"][i].strip() != "":
-                all_rectangles.append(
-                    (
-                        data_dict["left"][i],
-                        data_dict["top"][i],
-                        data_dict["width"][i],
-                        data_dict["height"][i],
-                    )
-                )
-        return all_rectangles
-
-    def generate_pixel_mask(self, img_array: np.ndarray, answer: str):
-        """
-        Locate the suqad answer inside the scan using tesseract
-        """
-        if answer == "":
-            return generate_pixel_mask_from_recangles([], img_array.shape)
-
-        data_dict = pytesseract.image_to_data(
-            img_array, lang="eng", output_type=pytesseract.Output.DICT
-        )
-        match, all_text_offest_map = self._locate_answer(data_dict, answer)
-        if len(match) == 0 or match[0].end == 0:
-            return generate_pixel_mask_from_recangles([], img_array.shape)
-        else:
-            matched_rectangles = self._generate_rectangle_for_matched_answer(
-                match, data_dict, all_text_offest_map
-            )
-            matched_rectangles = merge_rectangle_lines(matched_rectangles, tolerance=10)
-            return generate_pixel_mask_from_recangles(
-                matched_rectangles, img_array.shape
-            )
+        img_array = img_array[: self.config.image_height, :]
+        return img_array, fonts
 
     def get_attention_mask(self, num_text_patches: int):
         """
@@ -286,7 +218,10 @@ class GlueDatasetForPixel(Dataset):
         rng: np.random.RandomState = None,
     ) -> None:
         super().__init__()
-        self.text_dataset = load_dataset("glue", task, split=split, cache_dir=config.dataset_cache_dir)
+        self.task = task
+        self.text_dataset = load_dataset(
+            "glue", task, split=split, cache_dir=config.dataset_cache_dir
+        )
         self.config = config
         self.transform = transform
         self.rng = rng
@@ -294,69 +229,76 @@ class GlueDatasetForPixel(Dataset):
         self.attention_mask = self.image_generator.get_attention_mask(
             config.num_patches
         )
-        self.randomize_font = split == "train"
+        self.randomize_font = split == "train" and config.randomize_font
+        self.base_fonts = [CustomFont("arial.ttf", "Arial", 18)] * 2
 
     def __len__(self) -> int:
         return len(self.text_dataset)
 
-    def _generate_scans_fron_sample(self, instance: Dict):
+    def _generate_scan_fron_sample(self, instance: Dict):
         """
         A method that generates the scans from a squad sample
         """
-        sentence_1 = instance["sentence_1"]
-        sentence_2 = instance["sentence_2"] if "sentence_2" in instance else ""
+        sentence_1 = instance[TASK_TO_KEYS[self.task][0]]
+        sentence_2 = (
+            instance[TASK_TO_KEYS[self.task][1]] if TASK_TO_KEYS[self.task][1] else ""
+        )
 
         scan = self.image_generator.generate(
             sentence_1,
             sentence_2,
-            method=self.config.long_context_generation_method,
-            randomize_font=self.randomize_font,
+            fonts=None if self.randomize_font else self.base_fonts,
         )
         return scan
 
     def __getitem__(self, index: int) -> Dict:
         sample = self.text_dataset[index]
-        
-        scan = self._generate_scan_fron_sample(sample)
+
+        scan, _ = self._generate_scan_fron_sample(sample)
 
         if self.transform:
-            scan = torch.from_numpy(np.stack([scan] * 3))
             scan = self.transform(scan)
 
         inputs = {
             "pixel_values": scan,
             "num_patches": self.config.num_patches,
             "attention_mask": self.attention_mask,
-            "label": sample["label"]
+            "label": sample["label"],
         }
-        yield inputs
+        return inputs
 
 
 def main():
-    wandb.init(config="configs/squad_config.yaml", mode="disabled")
+    wandb.init(
+        config="/home/knf792/PycharmProjects/pixel-2/configs/glue_config.yaml",
+        mode="disabled",
+    )
     rng = np.random.RandomState(2)
 
     transform = SyntheticDatasetTransform(wandb.config, rng=rng)
-    train_dataset = SquadDatasetForPixel(
-        config=wandb.config, transform=transform, rng=rng, split="train"
+    train_dataset = GlueDatasetForPixel(
+        config=wandb.config,
+        task=wandb.config.task,
+        transform=transform,
+        rng=rng,
+        split="train",
     )
     figures = []
-    for i in range(1):
-        train_dataset.set_epoch(i)
+    for i in range(3):
         counter = 0
-        for batch in tqdm(train_dataset, total=3000):
-            if counter == 3000:
+        for batch in train_dataset:
+            if counter == 3:
                 break
-            # im = batch["pixel_values"].numpy().astype("float32").transpose(1, 2, 0)
-            # mask = batch["label_mask"].numpy()
-            # mask = np.kron(mask, np.ones((16, 16)))
-            # im[mask == 1] = im[mask == 1] - 60
-            # im = np.clip(im, 0, 255).astype("uint8")
-            # figures.append(im)
+            im = batch["pixel_values"].numpy().astype("float32").transpose(1, 2, 0)
+            mask = batch["label_mask"].numpy()
+            mask = np.kron(mask, np.ones((16, 16)))
+            im[mask == 1] = im[mask == 1] - 60
+            im = np.clip(im, 0, 255).astype("uint8")
+            figures.append(im)
             counter += 1
 
     im = plot_arrays(figures)
-    im.save("results/sample_squad.png")
+    im.save("../results/sample_glue.png")
 
 
 if __name__ == "__main__":

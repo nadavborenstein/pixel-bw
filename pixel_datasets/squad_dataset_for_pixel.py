@@ -3,7 +3,7 @@ from torch.utils.data import IterableDataset, get_worker_info
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from configs.utils import crop_image, plot_arrays
-from utils.dataset_utils import CustomFont, render_html_as_image
+from utils.dataset_utils import CustomFont, render_html_as_image, get_random_custom_font
 from dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
 from utils.squad_utils import (
     generate_pixel_mask_from_recangles,
@@ -70,22 +70,6 @@ class SquadImageGenerator(object):
             if key in wandb.config:
                 style[key] = [wandb.config[key]]
         return style
-
-    def _get_random_custom_font(self) -> CustomFont:
-        """
-        A method that returns a random custom font from the font list
-        """
-        random_index = self.rng.randint(0, self.font_list.shape[0])
-        random_font = self.font_list["path"][random_index]
-        random_font = random_font.replace(" ", "_")  # fixing spaces in the path
-        font_name = random_font.split(".")[0].split("/")[1]
-
-        font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
-        custom_font = CustomFont(
-            file_name=random_font, font_name=font_name.title(), font_size=font_size
-        )
-        return custom_font
 
     def _get_random_margins(self) -> List[int]:
         """
@@ -174,7 +158,7 @@ class SquadImageGenerator(object):
         :param method: The method to be used for generating the image, one of ["random_crop", "concatenate", "list", "first_crop"]
         """
         if font is None and randomize_font:
-            font = self._get_random_custom_font()
+            font = get_random_custom_font(self.font_list, self.rng)
 
         question = self._generate_question(question)
         context = self._generate_context(context, font, randomize_font)

@@ -67,3 +67,35 @@
         {% endif %}
     }
 {% endmacro %}
+
+{% macro set_sentence_1_style(font_family, font_size, line_height, word_break, line_break) -%}
+    div.sentence_1 {
+        font-family: {{ font_family }};
+        font-size: {{ font_size }};
+        {% if line_height %}
+            line-height: {{ line_height }};
+        {% endif %}
+        {% if word_break %}
+            word-break: {{ word_break }};
+        {% endif %}
+        {% if line_break %}
+            line-break: {{ line_break }};
+        {% endif %}
+    }
+{% endmacro %}
+
+{% macro set_sentence_2_style(font_family, font_size, line_height, word_break, line_break) -%}
+    div.sentence_2 {
+        font-family: {{ font_family }};
+        font-size: {{ font_size }};
+        {% if line_height %}
+            line-height: {{ line_height }};
+        {% endif %}
+        {% if word_break %}
+            word-break: {{ word_break }};
+        {% endif %}
+        {% if line_break %}
+            line-break: {{ line_break }};
+        {% endif %}
+    }
+{% endmacro %}

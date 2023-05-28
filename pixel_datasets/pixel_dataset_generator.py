@@ -8,7 +8,7 @@ from typing import List, Tuple, Dict, Callable, Optional
 from wandb.sdk.wandb_config import Config
 
 from .utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
-from .utils.dataset_utils import CustomFont, render_html_as_image
+from .utils.dataset_utils import CustomFont, render_html_as_image, get_random_custom_font
 from torch.utils.data import IterableDataset, get_worker_info
 
 import matplotlib.pyplot as plt
@@ -95,24 +95,6 @@ class ImageGenerator(object):
                 style[key] = [wandb.config[key]]
         return style
 
-    def _get_random_custom_font(self) -> CustomFont:
-        """
-        A method that returns a random custom font from the font list
-        """
-        random_index = self.rng.randint(0, self.font_list.shape[0])
-        random_font = self.font_list["path"][random_index]
-        random_font = random_font.replace(" ", "_")  # fixing spaces in the path
-        font_name = random_font.split(".")[0].split("/")[1]
-
-        font_size = self.font_list["base_size"][random_index]
-        font_size = int(font_size / 1.4) + self.rng.randint(-4, 5, 1)[0]
-
-        custom_font = CustomFont(
-            file_name=random_font, font_name=font_name.title(), font_size=font_size
-        )
-
-        return custom_font
-
     def _get_random_margins(self) -> List[int]:
         if self.rng.rand() < self.config.margins_probability:
             margins = self.rng.randint(
@@ -155,7 +137,7 @@ class ImageGenerator(object):
         :param font: The font to be used
         """
         if font is None:
-            font = self._get_random_custom_font()
+            font = get_random_custom_font(self.font_list, self.rng)
         margins = self._get_random_margins()
         html_text = self.update_template(font, text, margins)
         img_array = render_html_as_image(
