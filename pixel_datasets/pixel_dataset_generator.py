@@ -8,7 +8,12 @@ from typing import List, Tuple, Dict, Callable, Optional
 from wandb.sdk.wandb_config import Config
 
 from .utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
-from .utils.dataset_utils import CustomFont, render_html_as_image, get_random_custom_font
+from .utils.dataset_utils import (
+    CustomFont,
+    render_html_as_image,
+    get_random_custom_font,
+    generate_patch_mask,
+)
 from torch.utils.data import IterableDataset, get_worker_info
 
 import matplotlib.pyplot as plt
@@ -177,62 +182,6 @@ class ImageGenerator(object):
         zeros[:n] = ones
         return zeros
 
-    def generate_random_mask(self, image_size):
-        """
-        Generate a random mask for the image.
-        """
-        mask = np.zeros(image_size)
-        pixels_masked = 0
-        while (
-            pixels_masked / (image_size[0] * image_size[1])
-        ) < self.config.mask_block_probability:
-            patch_height = (
-                self.rng.randint(
-                    self.config.mask_min_merged_blocks_size[0],
-                    self.config.mask_max_merged_blocks_size[0] + 1,
-                )
-                * self.config.mask_block_size[0]
-            )
-            patch_width = (
-                self.rng.randint(
-                    self.config.mask_min_merged_blocks_size[1],
-                    self.config.mask_max_merged_blocks_size[1] + 1,
-                )
-                * self.config.mask_block_size[1]
-            )
-
-            for i in range(10):
-                random_mask_location_x = self.rng.choice(
-                    np.arange(
-                        0, image_size[0] - patch_height, self.config.mask_block_size[0]
-                    )
-                )
-                random_mask_location_y = self.rng.choice(
-                    np.arange(
-                        0, image_size[1] - patch_width, self.config.mask_block_size[1]
-                    )
-                )
-
-                slice = mask[
-                    random_mask_location_x : random_mask_location_x + patch_height,
-                    random_mask_location_y : random_mask_location_y + patch_width,
-                ]
-                if np.sum(slice) > 0:
-                    continue
-                else:
-                    mask[
-                        random_mask_location_x : random_mask_location_x + patch_height,
-                        random_mask_location_y : random_mask_location_y + patch_width,
-                    ] = 1
-
-                    pixels_masked += patch_height * patch_width
-                    break
-
-        small_mask = mask[
-            :: self.config.patch_base_size[0], :: self.config.patch_base_size[1]
-        ].flatten()
-        return mask, small_mask
-
 
 class PretrainingDataset(IterableDataset):
     def __init__(
@@ -241,6 +190,7 @@ class PretrainingDataset(IterableDataset):
         text_dataset: Dataset,
         transform: Optional[Callable],
         rng: np.random.RandomState,
+        max_steps: int = None,
     ) -> None:
         """
         :param config: Config object, wandb.config
@@ -261,6 +211,8 @@ class PretrainingDataset(IterableDataset):
         self.attention_mask = self.image_generator.get_attention_mask(
             self.config.num_patches
         )
+        self.max_steps = max_steps
+        self.steps_taken = 0
 
     def set_epoch(self, epoch):
         """
@@ -271,6 +223,7 @@ class PretrainingDataset(IterableDataset):
         logging.info(
             f"randomizing dataset with worker id={info.id if info else 0} and epoch={epoch}"
         )
+        self.steps_taken = 0
 
     def _clean_paragraphs(self, paragraphs: List[str]) -> List[str]:
         """
@@ -310,8 +263,15 @@ class PretrainingDataset(IterableDataset):
             random_loc : self.config.max_snippet_length
         ]  # TODO add to config file
 
+    def _should_stop(self):
+        if self.max_steps is None:
+            return False
+        else:
+            self.steps_taken += 1
+            return self.steps_taken >= self.max_steps
+
     def __iter__(self):
-        while True:
+        while not self._should_stop():
             snippet = self._get_random_snippet()
             image, font = self.image_generator.generate(snippet)
             while self.image_generator.check_if_can_concatenate(image):
@@ -323,10 +283,12 @@ class PretrainingDataset(IterableDataset):
 
             if self.transform:
                 image = self.transform(image)
-
-            mask, patch_mask = self.image_generator.generate_random_mask(
-                image.shape[1:]
+            image = image / 255.0
+            mask, patch_mask = generate_patch_mask(
+                self.config, self.rng, image.shape[1:]
             )
+            patch_mask = patch_mask.flatten()
+
             inputs = {
                 "pixel_values": image,
                 "patch_mask": torch.tensor(patch_mask, dtype=torch.float32),

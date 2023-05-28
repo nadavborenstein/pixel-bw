@@ -1,4 +1,3 @@
-
 """
 PyTorch PIXEL models
 """
@@ -24,7 +23,10 @@ from transformers.modeling_outputs import (
     SequenceClassifierOutput,
     TokenClassifierOutput,
 )
-from transformers.modeling_utils import find_pruneable_heads_and_indices, prune_linear_layer
+from transformers.modeling_utils import (
+    find_pruneable_heads_and_indices,
+    prune_linear_layer,
+)
 
 from ...utils import DependencyParsingModelOutput, format_mask
 from ..biaffine import Biaffine
@@ -50,8 +52,12 @@ class PIXELForBiaffineParsing(ViTForImageClassification):
         self.num_labels = config.num_labels
         self.vit = ViTModel(config, add_pooling_layer=True)
 
-        self.biaffine_arcs = Biaffine(n_in=config.hidden_size, bias_x=True, bias_y=False)
-        self.biaffine_rels = Biaffine(n_in=config.hidden_size, n_out=config.num_labels, bias_x=True, bias_y=True)
+        self.biaffine_arcs = Biaffine(
+            n_in=config.hidden_size, bias_x=True, bias_y=False
+        )
+        self.biaffine_rels = Biaffine(
+            n_in=config.hidden_size, n_out=config.num_labels, bias_x=True, bias_y=True
+        )
 
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.loss_fn = CrossEntropyLoss()
@@ -73,7 +79,9 @@ class PIXELForBiaffineParsing(ViTForImageClassification):
         return_dict=None,
     ):
         r""" """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         # wandb.log({"pixel_values": wandb.Image(pixel_values)})
 
@@ -94,7 +102,9 @@ class PIXELForBiaffineParsing(ViTForImageClassification):
         word_outputs_deps = self._merge_subword_tokens(outs, word_starts)
 
         # adding the CLS representation as the representation for the "root" parse token
-        word_outputs_heads = torch.cat([outputs[1].unsqueeze(1), word_outputs_deps], dim=1)
+        word_outputs_heads = torch.cat(
+            [outputs[1].unsqueeze(1), word_outputs_deps], dim=1
+        )
 
         arc_logits = self.biaffine_arcs(word_outputs_deps, word_outputs_heads)
         arc_logits = arc_logits.squeeze()
@@ -104,7 +114,9 @@ class PIXELForBiaffineParsing(ViTForImageClassification):
 
         loss = None
         if arc_labels is not None and rel_labels is not None:
-            loss = self._get_loss(arc_logits, rel_logits, arc_labels, rel_labels, self.loss_fn)
+            loss = self._get_loss(
+                arc_logits, rel_logits, arc_labels, rel_labels, self.loss_fn
+            )
 
         if len(arc_logits.shape) == 2:
             arc_logits = arc_logits.unsqueeze(0)
@@ -213,7 +225,9 @@ class PIXELForTokenClassification(ViTForImageClassification):
             config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         outputs = self.vit(
             pixel_values,
@@ -250,7 +264,12 @@ class PIXELForTokenClassification(ViTForImageClassification):
 
 
 class PIXELForSequenceClassification(ViTForImageClassification):
-    def __init__(self, config, pooling_mode: PoolingMode = PoolingMode.MEAN, add_layer_norm: bool = True):
+    def __init__(
+        self,
+        config,
+        pooling_mode: PoolingMode = PoolingMode.MEAN,
+        add_layer_norm: bool = True,
+    ):
         super().__init__(config)
 
         if not hasattr(self.config, "interpolate_pos_encoding"):
@@ -268,7 +287,11 @@ class PIXELForSequenceClassification(ViTForImageClassification):
             add_layer_norm=add_layer_norm,
             pooling_mode=pooling_mode,
         )
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels) if config.num_labels > 0 else nn.Identity()
+        self.classifier = (
+            nn.Linear(config.hidden_size, config.num_labels)
+            if config.num_labels > 0
+            else nn.Identity()
+        )
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -284,7 +307,7 @@ class PIXELForSequenceClassification(ViTForImageClassification):
         w = imgs.shape[3] // p
         x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
         x = torch.einsum("nchpwq->nhwpqc", x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p ** 2 * 3))
+        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
 
         return x
 
@@ -318,7 +341,9 @@ class PIXELForSequenceClassification(ViTForImageClassification):
             config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         outputs = self.vit(
             pixel_values,
@@ -346,7 +371,9 @@ class PIXELForSequenceClassification(ViTForImageClassification):
             if self.config.problem_type is None:
                 if self.num_labels == 1:
                     self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                elif self.num_labels > 1 and (
+                    labels.dtype == torch.long or labels.dtype == torch.int
+                ):
                     self.config.problem_type = "single_label_classification"
                 else:
                     self.config.problem_type = "multi_label_classification"
@@ -376,7 +403,6 @@ class PIXELForSequenceClassification(ViTForImageClassification):
 
 
 class PIXELForQuestionAnswering(ViTForImageClassification):
-
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 
     def __init__(self, config):
@@ -418,7 +444,9 @@ class PIXELForQuestionAnswering(ViTForImageClassification):
             Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
             are not taken into account for computing the loss.
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         outputs = self.vit(
             pixel_values,
@@ -432,7 +460,9 @@ class PIXELForQuestionAnswering(ViTForImageClassification):
             return_dict=return_dict,
         )
 
-        sequence_output = torch.cat([outputs[0][:, 1:, :], outputs[0][:, 0, :].unsqueeze(1)], dim=1)
+        sequence_output = torch.cat(
+            [outputs[0][:, 1:, :], outputs[0][:, 0, :].unsqueeze(1)], dim=1
+        )
         # sequence_output = self.dropout(outputs[0][:, 1:, :])
 
         logits = self.qa_outputs(sequence_output)
@@ -549,12 +579,16 @@ class PIXELPatchEmbeddings(nn.Module):
         super().__init__()
         image_size = to_2tuple(image_size)
         patch_size = to_2tuple(patch_size)
-        num_patches = (image_size[1] // patch_size[1]) * (image_size[0] // patch_size[0])
+        num_patches = (image_size[1] // patch_size[1]) * (
+            image_size[0] // patch_size[0]
+        )
         self.image_size = image_size
         self.patch_size = patch_size
         self.num_patches = num_patches
 
-        self.projection = nn.Conv2d(num_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.projection = nn.Conv2d(
+            num_channels, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
 
     def forward(self, pixel_values):
         batch_size, num_channels, height, width = pixel_values.shape
@@ -584,7 +618,8 @@ class PIXELEmbeddings(nn.Module):
         self.num_patches = self.patch_embeddings.num_patches
         # fixed sin-cos embedding
         self.position_embeddings = nn.Parameter(
-            torch.zeros(1, self.num_patches + 1, config.hidden_size), requires_grad=False
+            torch.zeros(1, self.num_patches + 1, config.hidden_size),
+            requires_grad=False,
         )
         self.config = config
         self.initialize_weights()
@@ -592,9 +627,13 @@ class PIXELEmbeddings(nn.Module):
     def initialize_weights(self):
         # initialize (and freeze) position embeddings by sin-cos embedding
         pos_embed = get_2d_sincos_pos_embed(
-            self.position_embeddings.shape[-1], int(self.patch_embeddings.num_patches ** 0.5), add_cls_token=True
+            self.position_embeddings.shape[-1],
+            int(self.patch_embeddings.num_patches**0.5),
+            add_cls_token=True,
         )
-        self.position_embeddings.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        self.position_embeddings.data.copy_(
+            torch.from_numpy(pos_embed).float().unsqueeze(0)
+        )
 
         # initialize patch_embeddings like nn.Linear (instead of nn.Conv2d)
         w = self.patch_embeddings.projection.weight.data
@@ -613,7 +652,9 @@ class PIXELEmbeddings(nn.Module):
         batch_size, seq_length, dim = sequence.shape
         len_keep = int(seq_length * (1 - self.config.mask_ratio))
 
-        noise = torch.rand(batch_size, seq_length, device=sequence.device)  # noise in [0, 1]
+        noise = torch.rand(
+            batch_size, seq_length, device=sequence.device
+        )  # noise in [0, 1]
 
         # Attention mask indicates patches containing actual text
         # Out of the patches containing actual text we take the one with the highest noise
@@ -624,12 +665,16 @@ class PIXELEmbeddings(nn.Module):
         noise[torch.arange(noise.size(0)), noise_mask] = 100.0
 
         # sort noise for each sample
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        ids_shuffle = torch.argsort(
+            noise, dim=1
+        )  # ascend: small is keep, large is remove
         ids_restore = torch.argsort(ids_shuffle, dim=1)
 
         # keep the first subset
         ids_keep = ids_shuffle[:, :len_keep]
-        sequence_masked = torch.gather(sequence, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, dim))
+        sequence_masked = torch.gather(
+            sequence, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, dim)
+        )
         attention_mask_masked = torch.gather(attention_mask, dim=1, index=ids_keep)
 
         # generate the binary mask: 0 is keep, 1 is remove
@@ -641,24 +686,31 @@ class PIXELEmbeddings(nn.Module):
         return sequence_masked, attention_mask_masked, mask, ids_restore
 
     def controlled_masking(self, sequence, attention_mask, patch_mask):
-
         batch_size, seq_length, dim = sequence.shape
 
-        len_keep = int(seq_length * (1 - self.config.mask_ratio))
+        # len_keep = int(seq_length * (1 - self.config.mask_ratio))
+        len_keep = seq_length - patch_mask.sum(dim=1).mean().cpu().numpy().astype(int)
 
         # We keep the interface the same as in the original random_masking function above
         # The only difference is that instead of random noise we use the predefined mask
         # Sometimes the greedy span masking yields fewer masked patches than specified through mask_ratio
         # We additionally mask out the difference between them randomly using noise in [0, 0.01]
-        noise = patch_mask + (torch.rand(batch_size, seq_length, device=sequence.device) / 100)  # noise in [0, 0.01)
+
+        noise = patch_mask + (
+            torch.rand(batch_size, seq_length, device=sequence.device) / 100
+        )  # noise in [0, 0.01)
 
         # sort noise for each sample
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        ids_shuffle = torch.argsort(
+            noise, dim=1
+        )  # ascend: small is keep, large is remove
         ids_restore = torch.argsort(ids_shuffle, dim=1)
 
         # keep the first subset
         ids_keep = ids_shuffle[:, :len_keep]
-        sequence_masked = torch.gather(sequence, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, dim))
+        sequence_masked = torch.gather(
+            sequence, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, dim)
+        )
         attention_mask_masked = torch.gather(attention_mask, dim=1, index=ids_keep)
 
         # generate the binary mask: 0 is keep, 1 is remove
@@ -677,18 +729,24 @@ class PIXELEmbeddings(nn.Module):
         embeddings = embeddings + self.position_embeddings[:, 1:, :]
 
         # masking: length -> length * config.mask_ratio
+        # breakpoint()
         if patch_mask is not None:
             embeddings, attention_mask, mask, ids_restore = self.controlled_masking(
                 embeddings, attention_mask, patch_mask
             )
         else:
-            embeddings, attention_mask, mask, ids_restore = self.random_masking(embeddings, attention_mask)
+            embeddings, attention_mask, mask, ids_restore = self.random_masking(
+                embeddings, attention_mask
+            )
 
         # append cls token
         cls_token = self.cls_token + self.position_embeddings[:, :1, :]
         cls_tokens = cls_token.expand(embeddings.shape[0], -1, -1)
         embeddings = torch.cat((cls_tokens, embeddings), dim=1)
-        attention_mask = torch.cat((torch.ones((batch_size, 1), device=attention_mask.device), attention_mask), dim=1)
+        attention_mask = torch.cat(
+            (torch.ones((batch_size, 1), device=attention_mask.device), attention_mask),
+            dim=1,
+        )
 
         return embeddings, attention_mask, mask, ids_restore
 
@@ -696,7 +754,9 @@ class PIXELEmbeddings(nn.Module):
 class PIXELSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
-        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(config, "embedding_size"):
+        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(
+            config, "embedding_size"
+        ):
             raise ValueError(
                 f"The hidden size {config.hidden_size,} is not a multiple of the number of attention "
                 f"heads {config.num_attention_heads}."
@@ -706,18 +766,33 @@ class PIXELSelfAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
+        self.query = nn.Linear(
+            config.hidden_size, self.all_head_size, bias=config.qkv_bias
+        )
+        self.key = nn.Linear(
+            config.hidden_size, self.all_head_size, bias=config.qkv_bias
+        )
+        self.value = nn.Linear(
+            config.hidden_size, self.all_head_size, bias=config.qkv_bias
+        )
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        new_x_shape = x.size()[:-1] + (
+            self.num_attention_heads,
+            self.attention_head_size,
+        )
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        output_attentions=False,
+    ):
         mixed_query_layer = self.query(hidden_states)
 
         key_layer = self.transpose_for_scores(self.key(hidden_states))
@@ -750,7 +825,9 @@ class PIXELSelfAttention(nn.Module):
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
-        outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
+        outputs = (
+            (context_layer, attention_probs) if output_attentions else (context_layer,)
+        )
 
         return outputs
 
@@ -784,7 +861,10 @@ class PIXELAttention(nn.Module):
         if len(heads) == 0:
             return
         heads, index = find_pruneable_heads_and_indices(
-            heads, self.attention.num_attention_heads, self.attention.attention_head_size, self.pruned_heads
+            heads,
+            self.attention.num_attention_heads,
+            self.attention.attention_head_size,
+            self.pruned_heads,
         )
 
         # Prune linear layers
@@ -794,16 +874,30 @@ class PIXELAttention(nn.Module):
         self.output.dense = prune_linear_layer(self.output.dense, index, dim=1)
 
         # Update hyper params and store pruned heads
-        self.attention.num_attention_heads = self.attention.num_attention_heads - len(heads)
-        self.attention.all_head_size = self.attention.attention_head_size * self.attention.num_attention_heads
+        self.attention.num_attention_heads = self.attention.num_attention_heads - len(
+            heads
+        )
+        self.attention.all_head_size = (
+            self.attention.attention_head_size * self.attention.num_attention_heads
+        )
         self.pruned_heads = self.pruned_heads.union(heads)
 
-    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False):
-        self_outputs = self.attention(hidden_states, attention_mask, head_mask, output_attentions)
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        output_attentions=False,
+    ):
+        self_outputs = self.attention(
+            hidden_states, attention_mask, head_mask, output_attentions
+        )
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
-        outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
+        outputs = (attention_output,) + self_outputs[
+            1:
+        ]  # add attentions if we output them
         return outputs
 
 
@@ -817,7 +911,6 @@ class PIXELIntermediate(nn.Module):
             self.intermediate_act_fn = config.hidden_act
 
     def forward(self, hidden_states):
-
         hidden_states = self.dense(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
 
@@ -849,18 +942,32 @@ class PIXELLayer(nn.Module):
         self.attention = PIXELAttention(config)
         self.intermediate = PIXELIntermediate(config)
         self.output = PIXELOutput(config)
-        self.layernorm_before = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.layernorm_after = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layernorm_before = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
+        self.layernorm_after = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
 
-    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        output_attentions=False,
+    ):
         self_attention_outputs = self.attention(
-            self.layernorm_before(hidden_states),  # in PIXEL, layernorm is applied before self-attention
+            self.layernorm_before(
+                hidden_states
+            ),  # in PIXEL, layernorm is applied before self-attention
             attention_mask,
             head_mask,
             output_attentions=output_attentions,
         )
         attention_output = self_attention_outputs[0]
-        outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+        outputs = self_attention_outputs[
+            1:
+        ]  # add self attentions if we output attention weights
 
         # first residual connection
         hidden_states = attention_output + hidden_states
@@ -887,7 +994,9 @@ class PIXELEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.layer = nn.ModuleList([PIXELLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList(
+            [PIXELLayer(config) for _ in range(config.num_hidden_layers)]
+        )
         self.gradient_checkpointing = False
 
     def forward(
@@ -923,7 +1032,9 @@ class PIXELEncoder(nn.Module):
                     layer_head_mask,
                 )
             else:
-                layer_outputs = layer_module(hidden_states, attention_mask, layer_head_mask, output_attentions)
+                layer_outputs = layer_module(
+                    hidden_states, attention_mask, layer_head_mask, output_attentions
+                )
 
             hidden_states = layer_outputs[0]
 
@@ -934,7 +1045,11 @@ class PIXELEncoder(nn.Module):
             all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+            return tuple(
+                v
+                for v in [hidden_states, all_hidden_states, all_self_attentions]
+                if v is not None
+            )
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
@@ -1008,11 +1123,19 @@ class PIXELModel(PIXELPreTrainedModel):
         r"""
         Returns:
         ```"""
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         if pixel_values is None:
             raise ValueError("You have to specify pixel_values")
@@ -1025,9 +1148,12 @@ class PIXELModel(PIXELPreTrainedModel):
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
         if attention_mask is None:
-            attention_mask = torch.ones((pixel_values.shape[0], self.embeddings.num_patches), device=self.device)
-
-        embedding_output, attention_mask, mask, ids_restore = self.embeddings(pixel_values, attention_mask, patch_mask)
+            attention_mask = torch.ones(
+                (pixel_values.shape[0], self.embeddings.num_patches), device=self.device
+            )
+        embedding_output, attention_mask, mask, ids_restore = self.embeddings(
+            pixel_values, attention_mask, patch_mask
+        )
 
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
             attention_mask, embedding_output.shape, self.device
@@ -1059,10 +1185,13 @@ class PIXELModel(PIXELPreTrainedModel):
 class PIXELDecoder(nn.Module):
     def __init__(self, config, num_patches, dtype):
         super().__init__()
-        self.decoder_embed = nn.Linear(config.hidden_size, config.decoder_hidden_size, bias=True)
+        self.decoder_embed = nn.Linear(
+            config.hidden_size, config.decoder_hidden_size, bias=True
+        )
         self.mask_token = nn.Parameter(torch.zeros(1, 1, config.decoder_hidden_size))
         self.decoder_pos_embed = nn.Parameter(
-            torch.zeros(1, num_patches + 1, config.decoder_hidden_size), requires_grad=False
+            torch.zeros(1, num_patches + 1, config.decoder_hidden_size),
+            requires_grad=False,
         )  # fixed sin-cos embedding
 
         decoder_config = deepcopy(config)
@@ -1071,12 +1200,17 @@ class PIXELDecoder(nn.Module):
         decoder_config.num_attention_heads = config.decoder_num_attention_heads
         decoder_config.intermediate_size = config.decoder_intermediate_size
         self.decoder_layers = nn.ModuleList(
-            [PIXELLayer(decoder_config) for _ in range(config.decoder_num_hidden_layers)]
+            [
+                PIXELLayer(decoder_config)
+                for _ in range(config.decoder_num_hidden_layers)
+            ]
         )
 
         self.decoder_norm = nn.LayerNorm(config.decoder_hidden_size)
         self.decoder_pred = nn.Linear(
-            config.decoder_hidden_size, config.patch_size ** 2 * config.num_channels, bias=True
+            config.decoder_hidden_size,
+            config.patch_size**2 * config.num_channels,
+            bias=True,
         )  # encoder to decoder
         self.gradient_checkpointing = False
         self.config = config
@@ -1086,9 +1220,13 @@ class PIXELDecoder(nn.Module):
     def initialize_weights(self, num_patches):
         # initialize (and freeze) position embeddings by sin-cos embedding
         decoder_pos_embed = get_2d_sincos_pos_embed(
-            self.decoder_pos_embed.shape[-1], int(num_patches ** 0.5), add_cls_token=True
+            self.decoder_pos_embed.shape[-1],
+            int(num_patches**0.5),
+            add_cls_token=True,
         )
-        self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
+        self.decoder_pos_embed.data.copy_(
+            torch.from_numpy(decoder_pos_embed).float().unsqueeze(0)
+        )
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
         torch.nn.init.normal_(self.mask_token, std=self.config.initializer_range)
@@ -1119,8 +1257,10 @@ class PIXELDecoder(nn.Module):
             # - if the model is a decoder, apply a causal mask in addition to the padding mask
             # - if the model is an encoder, make the mask broadcastable to [batch_size, num_heads, seq_length, seq_length]
             if self.config.is_decoder:
-                extended_attention_mask = self.create_extended_attention_mask_for_decoder(
-                    input_shape, attention_mask, device
+                extended_attention_mask = (
+                    self.create_extended_attention_mask_for_decoder(
+                        input_shape, attention_mask, device
+                    )
                 )
             else:
                 extended_attention_mask = attention_mask[:, None, None, :]
@@ -1134,7 +1274,9 @@ class PIXELDecoder(nn.Module):
         # positions we want to attend and -10000.0 for masked positions.
         # Since we are adding it to the raw scores before the softmax, this is
         # effectively the same as removing these entirely.
-        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        extended_attention_mask = extended_attention_mask.to(
+            dtype=self.dtype
+        )  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
         return extended_attention_mask
 
@@ -1153,18 +1295,27 @@ class PIXELDecoder(nn.Module):
         batch_size = hidden_states.shape[0]
 
         # append mask tokens to sequence
-        mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
+        mask_tokens = self.mask_token.repeat(
+            x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1
+        )
         x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # no cls token
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
+        x_ = torch.gather(
+            x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2])
+        )  # unshuffle
         x = torch.cat([x[:, :1, :], x_], dim=1)  # append cls token
 
         # add pos embed
         hidden_states = x + self.decoder_pos_embed
 
         if attention_mask is None:
-            attention_mask = torch.ones((batch_size, hidden_states.shape[1] - 1), device=hidden_states.device)
+            attention_mask = torch.ones(
+                (batch_size, hidden_states.shape[1] - 1), device=hidden_states.device
+            )
 
-        attention_mask = torch.cat((torch.ones((batch_size, 1), device=attention_mask.device), attention_mask), dim=1)
+        attention_mask = torch.cat(
+            (torch.ones((batch_size, 1), device=attention_mask.device), attention_mask),
+            dim=1,
+        )
 
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
             attention_mask, hidden_states.shape, attention_mask.device
@@ -1216,7 +1367,11 @@ class PIXELDecoder(nn.Module):
         logits = logits[:, 1:, :]
 
         if not return_dict:
-            return tuple(v for v in [logits, all_hidden_states, all_self_attentions] if v is not None)
+            return tuple(
+                v
+                for v in [logits, all_hidden_states, all_self_attentions]
+                if v is not None
+            )
         return PIXELDecoderOutput(
             logits=logits,
             hidden_states=all_hidden_states,
@@ -1230,7 +1385,9 @@ class PIXELForPreTraining(PIXELPreTrainedModel):
         self.config = config
 
         self.vit = PIXELModel(config)
-        self.decoder = PIXELDecoder(config, num_patches=self.vit.embeddings.num_patches, dtype=self.vit.dtype)
+        self.decoder = PIXELDecoder(
+            config, num_patches=self.vit.embeddings.num_patches, dtype=self.vit.dtype
+        )
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1257,7 +1414,7 @@ class PIXELForPreTraining(PIXELPreTrainedModel):
         w = imgs.shape[3] // p
         x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
         x = torch.einsum("nchpwq->nhwpqc", x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p ** 2 * 3))
+        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
 
         return x
 
@@ -1300,7 +1457,9 @@ class PIXELForPreTraining(PIXELPreTrainedModel):
         output_hidden_states=None,
         return_dict=None,
     ):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         outputs = self.vit(
             pixel_values,
@@ -1316,7 +1475,9 @@ class PIXELForPreTraining(PIXELPreTrainedModel):
         ids_restore = outputs.ids_restore
         mask = outputs.mask
 
-        decoder_outputs = self.decoder(latent, ids_restore, attention_mask)  # [N, L, p*p*3]
+        decoder_outputs = self.decoder(
+            latent, ids_restore, attention_mask
+        )  # [N, L, p*p*3]
         logits = decoder_outputs.logits
 
         merged_mask = torch.bitwise_and(mask == 1, attention_mask == 1).long()

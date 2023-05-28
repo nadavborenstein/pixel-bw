@@ -1,15 +1,168 @@
 # config-defaults.yaml
-# sample config defaults file
+
+# meta config
+run_name:
+  desc: name of the run
+  value: <NON_OPTIONAL>
+use_auth_token:
+  desc: auth token for wandb
+  value: <RETRACTED>
+do_train:
+  desc: whether to train the model. A non optinoal setting
+  value: <OPTINAL>
+do_eval:
+  desc: whether to evaluate the model. A non optinoal setting
+  value: <OPTINAL>
+resume_from_checkpoint:
+  desc: whether to resume from last saved checkpoint
+  value: none
+model_revision:
+  desc: The specific model version to use (can be a branch name, tag name or commit id)
+  value: main
+push_to_hub:
+  desc: whether to push the model to the hub after training
+  value: True
+streaming:
+  desc: whether to load all the datasets or to stream them
+  value: False
+hub_model_id:
+  desc: model id on huggingface
+  value: Nadav/PretrainedPHD-v2
+hub_strategy:
+  desc: when to push to hub
+  value: checkpoint
+hub_token:
+  desc: token for huggingface
+  value: <RETRACTED>
+hub_private_repo:
+  desc: whether the hub should be a private repo
+  value: True
+
+# training config
 epochs:
   desc: Number of epochs to train over
-  value: 100
-batch_size:
-  desc: Size of each mini-batch
-  value: 32
+  value: 1
+max_steps:
+  desc: maxumim number of training steps
+  value: 200000
 squad_version:
   desc: squad dataset version (1 or 2)
   value: 1
+seed:
+  desc: random_seed
+  value: 42
+fp16:
+  desc: whether to train with half persicion
+  value: True
+half_precision_backend:
+  desc: half precision backend
+  value: amp
+device:
+  desc: device to train on, cpu or cuda
+  value: "cuda"
+per_device_train_batch_size:
+  desc: training batch size
+  value: 86
+per_device_eval_batch_size:
+  desc: evaluation batch size
+  value: 32
+gradient_accumulation_steps:
+  desc: number of gradient accumulation steps
+  value: 1
+base_learning_rate:
+  desc: base learning rate
+  value: 1.5e-4
+lr_scheduler_type:
+  desc: type of the lr scheduler
+  value: "cosine"
+warmup_ratio:
+  desc: ratio used for warmup
+  value: 0
+evaluation_strategy:
+  desc: when to evaluate the model, in steps
+  value: "steps"
+eval_steps:
+  desc: frequency of model evaluation
+  value: 5000
+dataloader_num_workers:
+  desc: number of dataset workers
+  value: 43
 
+# logging config
+output_dir:
+  desc: where to save the output of the run
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v2"
+overwrite_output_dir:
+  desc: whether to overwrite the output dir
+  value: True
+job_dir:
+  desc: where to store wandb stuff
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v2"
+logging_strategy:
+  desc: logging strategy of the trainer
+  value: "steps"
+logging_steps:
+  desddc: logging frequency, in steps
+  value: 500
+save_stategy:
+  desc: save strategy of the trainer
+  value: steps
+save_steps:
+  desc: frequencey of saving the model
+  value: 10000
+report_to:
+  desc: tool to report to
+  value: ["wandb"]
+model_cache_dir:
+  desc: model cache dir
+  value: none
+
+# model config
+dropout_prob:
+  desc: dropout probability
+  value: 0.1
+model_config_name:
+  desc: Pretrained config name or path if not the same as model_name_or_path
+  value: none
+model_name_or_path:
+  desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
+  value: Nadav/PretrainedPHD
+norm_pix_loss:
+  desc: Whether or not to train with normalized pixel values as target.
+  value: True
+feature_extractor_name:
+  desc: name of the feature extractor module. Set to none
+  value: none
+
+
+# dataset config "Nadav/CaribbeanScans"
+dataset_cache_dir:
+  desc: where to cache the datasets
+  value: "/projects/copenlu/data/nadav/cache"
+train_dataset_names:
+  desc: list of the datasets used for intermediate training
+  value: ["wikipedia", "bookcorpusopen"]
+train_splits:
+  desc: splits to use for training
+  value: ["train", "train"]
+test_dataset_names:
+  desc: list of the test datasets used for intermediate training
+  value: ["wikipedia", "bookcorpusopen"]
+test_splits:
+  desc: splits to use for testing
+  value: ["test", "test"]
+train_dataset_configs:
+  desc: config of the training text datasets
+  value: ["20220301.en", "plain_text"]
+num_test_steps:
+  desc: number of images in test dataset
+  value: 2000
+label_column_name: 
+  desc: name of the label column
+  value: "label"
+number_of_labels:
+  desc: number of possible labels
+  value: 1
 
 # image generation settings
 html_template:
@@ -50,16 +203,19 @@ max_snippet_length:
   value: 20000
 mask_block_probability:
   desc: ratio of patches to be masked
-  value: 0.26
+  value: 0.29
+mask_ratio:
+  desc: ratio of patches to be masked
+  value: 0.29
 mask_block_size:
   desc: size of each masked block, each made of patches of size patch_base_size
   value: [32, 16]
 mask_max_merged_blocks_size:
   desc: maximum number of masked blocks merged together on each axis
-  value: [2, 6]
+  value: [4, 6]
 mask_min_merged_blocks_size:
   desc: minimum number of masked blocks merged together on each axis
-  value: [1, 2]
+  value: [2, 2]
 patch_base_size:
   desc: size in pixels of each patch
   value: [16, 16]
@@ -69,6 +225,15 @@ num_patches:
 random_font_probability:
   desc: probability to replace font mid scan
   value: 0.5
+embed_real_image:
+  desc: Whether to embed real images in white background
+  value: False
+label_names:
+  desc: Not sure...
+  value: ["pixel_values"]
+remove_unused_columns:
+  desc: not sure...
+  value: False
 
 # augmentations config
 bleed_through_probability:

@@ -8,8 +8,9 @@ from torch.utils.data import Dataset
 import numpy as np
 from PIL import Image
 from pixel import get_attention_mask
-
-
+from .utils.dataset_utils import (
+    generate_patch_mask,
+)
 class HistoricDatasetForPretraining(Dataset):
     def __init__(
         self,
@@ -109,70 +110,15 @@ class HistoricDatasetForPretraining(Dataset):
         image = self.torch_transform(image=image)["image"]
         return image
 
-    def generate_random_mask(self, image_size):
-        """
-        Generate a random mask for the image.
-        """
-        mask = np.zeros(image_size)
-        pixels_masked = 0
-        while (
-            pixels_masked / (image_size[0] * image_size[1])
-        ) < self.args.mask_block_probability:
-            patch_height = (
-                self.rng.randint(
-                    self.args.mask_min_merged_blocks_size[0],
-                    self.args.mask_max_merged_blocks_size[0] + 1,
-                )
-                * self.args.mask_block_size[0]
-            )
-            patch_width = (
-                self.rng.randint(
-                    self.args.mask_min_merged_blocks_size[1],
-                    self.args.mask_max_merged_blocks_size[1] + 1,
-                )
-                * self.args.mask_block_size[1]
-            )
-
-            for i in range(10):
-                random_mask_location_x = self.rng.choice(
-                    np.arange(
-                        0, image_size[0] - patch_height, self.args.mask_block_size[0]
-                    )
-                )
-                random_mask_location_y = self.rng.choice(
-                    np.arange(
-                        0, image_size[1] - patch_width, self.args.mask_block_size[1]
-                    )
-                )
-
-                slice = mask[
-                    random_mask_location_x : random_mask_location_x + patch_height,
-                    random_mask_location_y : random_mask_location_y + patch_width,
-                ]
-                if np.sum(slice) > 0:
-                    continue
-                else:
-                    mask[
-                        random_mask_location_x : random_mask_location_x + patch_height,
-                        random_mask_location_y : random_mask_location_y + patch_width,
-                    ] = 1
-
-                    pixels_masked += patch_height * patch_width
-                    break
-
-        small_mask = mask[
-            :: self.args.patch_base_size[0], :: self.args.patch_base_size[1]
-        ].flatten()
-        return mask, small_mask
-
     def __getitem__(self, item):
         original_image = self.data[item]["image"]
         pixel_values, num_patches = self.resize_image(original_image)
         attention_mask = get_attention_mask(num_patches)
         if not self.labeled:
-            _, patch_mask = self.generate_random_mask(
-                (self.args.image_width, self.args.image_height)
+            _, patch_mask = generate_patch_mask(
+                self.args, self.rng, (self.args.image_height, self.args.image_width)
             )
+            patch_mask = patch_mask.flatten()
             patch_mask = torch.tensor(patch_mask, dtype=torch.float32)
             label = None
         else:

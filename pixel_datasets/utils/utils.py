@@ -13,7 +13,7 @@ from typing import List, Tuple, Dict, Union, Optional
 import numpy as np
 import io
 import pandas as pd
-
+import torch
 import math
 
 
@@ -235,3 +235,23 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
     img = Image.open(buf)
     # return the image object
     return img
+
+
+def plot_patch_mask(mask, patch_size=16):
+    if type(mask) == torch.Tensor:
+        mask = mask.detach().cpu().numpy()
+    if len(mask.shape) == 2:
+        mask = mask.squeeze(0)
+
+    mask_square_size = int(np.sqrt(mask.shape[0]))
+    mask = mask.reshape(mask_square_size, mask_square_size)
+
+    if mask.max() == 1 and mask.min() == 0:
+        mask = mask * 255
+    elif mask.max() == 1 and mask.min() == -1:
+        mask = (mask + 1) * 255 / 2
+
+    mask = mask.astype(np.uint8)
+    mask = np.kron(mask, np.ones((patch_size, patch_size)))
+    plt.imshow(mask, cmap="gray")
+    plt.savefig("/home/knf792/PycharmProjects/pixel-2/pixel_datasets/results/mask.png")

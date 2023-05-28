@@ -10,8 +10,6 @@ from transformers import (
     TrainerControl,
 )
 
-from configs.all_configs import RenderingArguments
-
 # from dataset_synthesis.synthetic_dataset import (
 #     SyntheticDatasetTorch,
 #     SyntheticDatasetTransform,
@@ -51,6 +49,7 @@ class VisualizationCallback(TrainerCallback):
             figures_to_log["original_image"].append(original_image)
         self._log_image(figures_to_log)
 
+
     def on_evaluate(
         self,
         args: TrainingArguments,
@@ -61,7 +60,6 @@ class VisualizationCallback(TrainerCallback):
         model=None,
         **kwargs,
     ):
-        # breakpoint()
         logger.info(
             f"logging images. Global rank: {state.is_world_process_zero}, local rank: {state.is_local_process_zero}"
         )
@@ -71,6 +69,7 @@ class VisualizationCallback(TrainerCallback):
         if self.visualize_train:
             batch = next(iter(train_dataloader))
         else:
+            eval_dataloader.dataset.steps_taken = 0
             batch = next(iter(eval_dataloader))
         batch = {k: v.to(args.device) for k, v in batch.items()}
         logger.info(f"visualizing {batch['attention_mask'].shape[0]} images")

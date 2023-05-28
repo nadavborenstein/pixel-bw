@@ -85,8 +85,55 @@ def get_random_custom_font(font_list, rng) -> CustomFont:
     font_name = random_font.split(".")[0].split("/")[1]
 
     font_size = font_list["base_size"][random_index]
-    font_size = int(font_size * rng.uniform(0.7, 1.3))
+    font_size = int(font_size * rng.uniform(0.65, 1.15))
     custom_font = CustomFont(
         file_name=random_font, font_name=font_name.title(), font_size=font_size
     )
     return custom_font
+
+
+def generate_patch_mask(config, rng, image_size):
+    """
+    Generate a random mask for the image.
+    """
+    mask_shape = image_size / np.array(config.patch_base_size)
+    assert mask_shape[0] == int(mask_shape[0]), "Mask shape is not an integer"
+    assert mask_shape[1] == int(mask_shape[1]), "Mask shape is not an integer"
+
+    mask_shape = mask_shape.astype(int)
+    mask = np.zeros(mask_shape)
+    patches_masked = 0
+    while (
+        patches_masked / (mask_shape[0] * mask_shape[1])
+    ) < config.mask_block_probability:
+        patch_height = rng.randint(
+            config.mask_min_merged_blocks_size[0],
+            config.mask_max_merged_blocks_size[0] + 1,
+        )
+
+        patch_width = rng.randint(
+            config.mask_min_merged_blocks_size[1],
+            config.mask_max_merged_blocks_size[1] + 1,
+        )
+
+        for _ in range(10):
+            random_mask_location_x = rng.randint(mask_shape[0] - patch_height + 1)
+            random_mask_location_y = rng.randint(mask_shape[1] - patch_width + 1)
+
+            slice = mask[
+                random_mask_location_x : random_mask_location_x + patch_height,
+                random_mask_location_y : random_mask_location_y + patch_width,
+            ]
+            if np.sum(slice) > 0:
+                continue
+            else:
+                mask[
+                    random_mask_location_x : random_mask_location_x + patch_height,
+                    random_mask_location_y : random_mask_location_y + patch_width,
+                ] = 1
+
+                patches_masked += patch_height * patch_width
+                break
+
+    pixel_mask = np.kron(mask, np.ones(config.patch_base_size))
+    return pixel_mask, mask

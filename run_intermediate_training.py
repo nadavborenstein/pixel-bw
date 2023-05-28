@@ -255,10 +255,6 @@ def main(args: Config):
         logger.info("Training new model from scratch")
         model = PIXELForPreTraining(config)
 
-    # image_height = rendering_args.figure_size[0]
-    # image_width = rendering_args.figure_size[0]
-    # model.config.image_size = (image_height, image_width)
-    # model.image_size = (image_height, image_width)
 
     logger.info("***** Final model config *****")
     logger.info(config)
