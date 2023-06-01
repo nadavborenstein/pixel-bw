@@ -4,9 +4,9 @@
 run_name:
   desc: name of the run
   value: <NON_OPTIONAL>
-task:
+task_name:
   desc: glue task name. One of [cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli]
-  value: mnli
+  value: sst2
 use_auth_token:
   desc: auth token for wandb
   value: <RETRACTED>
@@ -24,7 +24,7 @@ model_revision:
   value: main
 push_to_hub:
   desc: whether to push the model to the hub after training
-  value: True
+  value: False
 streaming:
   desc: whether to load all the datasets or to stream them
   value: False
@@ -33,7 +33,7 @@ hub_model_id:
   value: Nadav/pixel-intermediate
 hub_strategy:
   desc: when to push to hub
-  value: checkpoint
+  value: None
 hub_token:
   desc: token for huggingface
   value: <RETRACTED>
@@ -45,15 +45,12 @@ model_cache_dir:
   value: none
 
 # training config
-epochs:
+num_train_epochs:
   desc: Number of epochs to train over
-  value: 1
+  value: 5
 max_steps:
   desc: maxumim number of training steps
-  value: 1000000
-squad_version:
-  desc: squad dataset version (1 or 2)
-  value: 1
+  value: -1
 seed:
   desc: random_seed
   value: 42
@@ -68,13 +65,13 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 42
+  value: 22
 per_device_eval_batch_size:
   desc: evaluation batch size
   value: 16
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
-  value: 2
+  value: 1
 base_learning_rate:
   desc: base learning rate
   value: 1.5e-4
@@ -86,46 +83,45 @@ warmup_ratio:
   value: 0
 evaluation_strategy:
   desc: when to evaluate the model, in steps
-  value: "steps"
+  value: steps
 eval_steps:
   desc: frequency of model evaluation
-  value: 1000
+  value: 50
 ddp_find_unused_parameters:
   desc: not sure, something with ddp obviously
   value: False
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 8
-task_name:
-  desc: name of the task, for model card
-  value: "squad"
-
+  value: 22
+max_train_samples:
+  desc: max train sample
+  value: None
 
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/glue_finetuning"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: True
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/glue_finetuning"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
 logging_steps:
   desddc: logging frequency, in steps
-  value: 500
+  value: 50
 save_stategy:
   desc: save strategy of the trainer
-  value: steps
+  value: epoch
 save_steps:
   desc: frequencey of saving the model
   value: 5000
 report_to:
   desc: tool to report to
-  value: ["wandb"]
+  value: []
 
 # model config
 dropout_prob:
@@ -140,7 +136,12 @@ model_name_or_path:
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
-
+pooling_mode:
+  desc: mode of pooling, 
+  value: mean
+pooler_add_layer_norm:
+  desc: whether to add a norm layer before pooling
+  value: True
 
 # dataset config "Nadav/CaribbeanScans"
 dataset_cache_dir:
@@ -152,9 +153,6 @@ dataset_name:
 label_column_name: 
   desc: name of the label column
   value: "label"
-number_of_labels:
-  desc: number of possible labels
-  value: 2
 
 
 # image generation settings
@@ -196,7 +194,7 @@ min_paragraph_length:
   value: 200
 font_list_path:
   desc: path to a csv containing a list of fonts to use
-  value: pixel_datasets/fonts/clear_fonts_with_size.csv # pixel_datasets/fonts/antique_fonts.csv
+  value: pixel_datasets/fonts/antique_fonts.csv # pixel_datasets/fonts/antique_fonts.csv
 max_snippet_length:
   desc: number of characters to take from each text sample to generate a scan from
   value: 20000
@@ -303,4 +301,4 @@ rotation_probability:
   value: 0.2
 color_jitter_probability:
   desc: color_jitter_probability
-  value: 0.4
+  value: 0.03

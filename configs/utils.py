@@ -28,6 +28,16 @@ def generate_training_args_from_config(config: Config):
     return training_args
 
 
+def convert_string_to_float_or_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        try:
+            return float(s)
+        except ValueError:
+            return s
+
+
 def read_args():
     # create an empty dictionary
     args = {}
@@ -37,7 +47,9 @@ def read_args():
         key, value = arg.split("=")
         # remove any leading or trailing spaces
         key = key.strip()
+
         value = value.strip()
+        value = convert_string_to_float_or_int(value)
         # remove any leading '-' signs from the key
         key = key.lstrip("-")
         # add the key-value pair to the dictionary
@@ -100,4 +112,8 @@ def update_config(config: Config, update_dict: dict):
             update_config_key(config, key, True)
         if config[key] == "false" or config[key] == "False":
             update_config_key(config, key, True)
+        if config[key] == "null" or config[key] == "Null":
+            update_config_key(config, key, None)
+        if config[key] == "[]" or config[key] == "()":
+            update_config_key(config, key, [])
     return config

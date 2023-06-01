@@ -75,7 +75,7 @@ def render_html_as_image(
         )
 
 
-def get_random_custom_font(font_list, rng) -> CustomFont:
+def get_random_custom_font(font_list, rng, min_size_factor=0.65, max_size_factor=1.15) -> CustomFont:
     """
     A method that returns a random custom font from the font list
     """
@@ -85,7 +85,7 @@ def get_random_custom_font(font_list, rng) -> CustomFont:
     font_name = random_font.split(".")[0].split("/")[1]
 
     font_size = font_list["base_size"][random_index]
-    font_size = int(font_size * rng.uniform(0.65, 1.15))
+    font_size = int(font_size * rng.uniform(min_size_factor, max_size_factor))
     custom_font = CustomFont(
         file_name=random_font, font_name=font_name.title(), font_size=font_size
     )

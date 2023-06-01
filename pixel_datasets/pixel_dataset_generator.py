@@ -237,7 +237,9 @@ class PretrainingDataset(IterableDataset):
         ]  # TODO add to config file
         return paragraphs
 
-    def _get_random_snippet(self, random_loc_within_paragraph: bool = True) -> str:
+    def _get_random_snippet(
+        self, random_loc_within_paragraph: bool = True
+    ) -> Tuple[str, List[str]]:
         """
         A method that returns a random snippet from a random paragraph in a random document
         :param random_loc_within_paragraph: whether to return a random location within the paragraph or the beginning
@@ -259,27 +261,52 @@ class PretrainingDataset(IterableDataset):
             if random_loc_within_paragraph
             else 0
         )
-        return paragraph[
-            random_loc : self.config.max_snippet_length
-        ]  # TODO add to config file
+        return (
+            paragraph[random_loc : self.config.max_snippet_length],
+            paragraphs[paragraph_index:],
+        )
 
     def _should_stop(self):
         if self.max_steps is None:
             return False
         else:
-            self.steps_taken += 1
             return self.steps_taken >= self.max_steps
+
+    def _update_steps(self):
+        self.steps_taken += 1
+
+    def generate_image(self):
+        """
+        A method that generates an image from a random snippet
+        """
+        snippet, next_snippets = self._get_random_snippet()
+        image, font = self.image_generator.generate(snippet)
+        while self.image_generator.check_if_can_concatenate(image):
+            if self.rng.rand() > self.config.random_font_probability:
+                font = None
+            if (
+                self.rng.rand() > self.config.random_snippet_probability
+                or len(next_snippets) == 0
+            ):
+                snippet_2, next_snippets = self._get_random_snippet(
+                    random_loc_within_paragraph=False
+                )
+            else:
+                snippet_2 = next_snippets.pop(0)
+            image_2, font = self.image_generator.generate(snippet_2, font)
+            image = self.image_generator.concatenate_images(image, image_2)
+
+        assert image.shape[0] == self.config.image_height
+        assert image.shape[1] == self.config.image_width
+        return image
 
     def __iter__(self):
         while not self._should_stop():
-            snippet = self._get_random_snippet()
-            image, font = self.image_generator.generate(snippet)
-            while self.image_generator.check_if_can_concatenate(image):
-                if self.rng.rand() > self.config.random_font_probability:
-                    font = None
-                snippet_2 = self._get_random_snippet(random_loc_within_paragraph=False)
-                image_2, font = self.image_generator.generate(snippet_2, font)
-                image = self.image_generator.concatenate_images(image, image_2)
+            try:
+                image = self.generate_image()
+            except Exception as e:
+                logging.info(f"Failed to generate image. Skipping image")
+                continue
 
             if self.transform:
                 image = self.transform(image)
@@ -295,7 +322,7 @@ class PretrainingDataset(IterableDataset):
                 "num_patches": self.config.num_patches,
                 "attention_mask": self.attention_mask,
             }
-
+            self._update_steps()
             yield inputs
 
 

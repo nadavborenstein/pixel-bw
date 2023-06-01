@@ -287,7 +287,7 @@ def main(args: Config):
         data_collator=collate_fn,
     )
 
-    if args.do_eval:
+    if args.do_eval and "wandb" in args.report_to:
         logger.info(f"adding visualization callback")
         trainer.add_callback(VisualizationCallback(visualize_train=False))
 

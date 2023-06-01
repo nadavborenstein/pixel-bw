@@ -153,11 +153,23 @@ number_of_labels:
   desc: number of possible labels
   value: 2
 
+max_l_dist_factor:
+  desc: length factor for fuzzy string matching
+  value: 0.4
+mask_patching_tolerance:
+  desc: tolerance of converting a pixel mask to patch mask (when a patch will be white)
+  value: 0.3
 
 # image generation settings
 html_template:
   desc: template for generating an HTML file from a piece of text
   value: "pretraining_block.html.jinja"
+html_question_template:
+  desc: html_question_template
+  value: "question_block.html.jinja"
+html_context_template:
+  desc: html_context_template
+  value: "context_block.html.jinja"
 max_margins:
   desc: maximum size of margin at the edges of the scan = [left, right, top, bottom]
   value: [15, 15, 3, 0]
@@ -224,11 +236,14 @@ label_names:
 remove_unused_columns:
   desc: not sure...
   value: False
+long_context_generation_method:
+  desc: The method to be used for generating the image, one of ["random_crop", "concatenate", "list", "first_crop"]
+  value: first_crop
 
 # augmentations config
 bleed_through_probability:
   desc: probability to apply bleed-through effect
-  value: 0.15
+  value: 0.06
 max_bleed_offset:
   desc: maximal translation offset for bleed-through effect
   value: 10
@@ -264,10 +279,10 @@ channel_noise_std:
   value: 0.03
 random_line_horizontal_probability:
   desc: probability of adding random horizontal line
-  value: 0.2
+  value: 0.1
 random_line_vertical_probability:
   desc: probability of adding random vertical line
-  value: 0.3
+  value: 0.1
 noise_probability:
   desc: probability of applying pixel level noise
   value: 0.3
@@ -285,13 +300,13 @@ blur_max_sigma:
   value: 3
 blur_probability:
   desc: probability of applying blur
-  value: 0.3
+  value: 0.2
 rotation_max_degrees:
   desc: Maximum rotation angle in degrees
   value: 5.0
 rotation_probability:
   desc: probability of applying rotation
-  value: 0.2
+  value: 0.05
 color_jitter_probability:
   desc: color_jitter_probability
-  value: 0.4
+  value: 0.05

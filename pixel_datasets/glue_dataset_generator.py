@@ -3,9 +3,13 @@ from torch.utils.data import Dataset
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from .utils.utils import crop_image, concatenate_images, embed_image, plot_arrays
-from .utils.dataset_utils import CustomFont, render_html_as_image, get_random_custom_font
+from .utils.dataset_utils import (
+    CustomFont,
+    render_html_as_image,
+    get_random_custom_font,
+)
 from .dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 from tqdm.auto import tqdm
 import numpy as np
 import pandas as pd
@@ -140,7 +144,6 @@ class GlueImageGenerator(object):
                 style[key] = [wandb.config[key]]
         return style
 
-
     def _get_random_margins(self) -> List[int]:
         if self.rng.rand() < self.config.margins_probability:
             margins = self.rng.randint(
@@ -173,13 +176,21 @@ class GlueImageGenerator(object):
         """
         if fonts is None:
             if self.config.use_same_font_for_both_sentences:
-                font = get_random_custom_font(self.font_list, self.rng)
+                font = get_random_custom_font(
+                    self.font_list, self.rng, max_size_factor=1.0
+                )
                 margin = self._get_random_margins()
                 fonts = [font, font]
                 margins = [margin, margin]
             else:
-                fonts = [get_random_custom_font(self.font_list, self.rng),
-                         get_random_custom_font(self.font_list, self.rng)]
+                fonts = [
+                    get_random_custom_font(
+                        self.font_list, self.rng, max_size_factor=1.0
+                    ),
+                    get_random_custom_font(
+                        self.font_list, self.rng, max_size_factor=1.0
+                    ),
+                ]
                 margins = [self._get_random_margins(), self._get_random_margins()]
         else:
             margins = [self._get_random_margins(), self._get_random_margins()]
@@ -222,6 +233,18 @@ class GlueDatasetForPixel(Dataset):
         self.text_dataset = load_dataset(
             "glue", task, split=split, cache_dir=config.dataset_cache_dir
         )
+        if task == "mnli" and split == "validation":
+            text_datast = load_dataset("glue", task, cache_dir=config.dataset_cache_dir)
+            self.text_dataset = concatenate_datasets(
+                [
+                    text_datast["validation_matched"],
+                    text_datast["validation_mismatched"],
+                ]
+            )
+        else:
+            self.text_dataset = load_dataset(
+                "glue", task, split=split, cache_dir=config.dataset_cache_dir
+            )
         self.config = config
         self.transform = transform
         self.rng = rng
@@ -230,7 +253,13 @@ class GlueDatasetForPixel(Dataset):
             config.num_patches
         )
         self.randomize_font = split == "train" and config.randomize_font
-        self.base_fonts = [CustomFont("arial.ttf", "Arial", 18)] * 2
+        self.base_fonts = [
+            CustomFont(
+                file_name="fonts/PackardAntique-Bold.ttf",
+                font_name="Packardantique-Bold",
+                font_size=16,
+            )
+        ] * 2
 
     def __len__(self) -> int:
         return len(self.text_dataset)

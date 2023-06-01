@@ -2,10 +2,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from torch.utils.data import IterableDataset, get_worker_info
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
-from configs.utils import crop_image, plot_arrays
-from utils.dataset_utils import CustomFont, render_html_as_image, get_random_custom_font
-from dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
-from utils.squad_utils import (
+from .utils.utils import crop_image, plot_arrays
+from .utils.dataset_utils import (
+    CustomFont,
+    render_html_as_image,
+    get_random_custom_font,
+)
+from .dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
+from .utils.squad_utils import (
     generate_pixel_mask_from_recangles,
     merge_rectangle_lines,
     convert_pixel_mask_to_patch_mask,
@@ -92,7 +96,9 @@ class SquadImageGenerator(object):
         A function to generate an HTML text from the given template and style
         """
         env = Environment(
-            loader=FileSystemLoader("./templates/"),
+            loader=FileSystemLoader(
+                "/home/knf792/PycharmProjects/pixel-2/pixel_datasets/templates/"
+            ),
             autoescape=select_autoescape(["html", "xml"]),
         )
         template = env.get_template(template)
@@ -111,7 +117,7 @@ class SquadImageGenerator(object):
         Generate a question image from the given text and font
         """
         if font is None:
-            font = CustomFont(file_name="Ariel", font_name="Ariel", font_size=28)
+            font = CustomFont(file_name="Ariel", font_name="Ariel", font_size=18)
         margins = [1, 1, 1, 1]
         style = self._get_updated_style_config(font, margins)
         html_text = self._generate_html_text(
@@ -269,6 +275,7 @@ class SquadDatasetForPixel(IterableDataset):
         split: str = "train",
         transform: Callable = None,
         rng: np.random.RandomState = None,
+        font: CustomFont = None,
     ) -> None:
         super().__init__()
         self.text_dataset = load_dataset("squad_v2", split=split)
@@ -280,6 +287,8 @@ class SquadDatasetForPixel(IterableDataset):
             config.num_patches
         )
         self.randomize_font = split == "train"
+        self.test_font = font
+        
 
     def set_epoch(self, epoch):
         """
@@ -308,6 +317,7 @@ class SquadDatasetForPixel(IterableDataset):
             context,
             method=self.config.long_context_generation_method,
             randomize_font=self.randomize_font,
+            font=self.test_font,
         )
 
         mask = self.image_generator.generate_pixel_mask(context_scan, answer)
