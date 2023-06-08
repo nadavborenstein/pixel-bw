@@ -112,7 +112,7 @@ save_steps:
   value: 10000
 report_to:
   desc: tool to report to
-  value: ["wandb"]
+  value: []
 model_cache_dir:
   desc: model cache dir
   value: none

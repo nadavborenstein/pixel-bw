@@ -230,9 +230,6 @@ class GlueDatasetForPixel(Dataset):
     ) -> None:
         super().__init__()
         self.task = task
-        self.text_dataset = load_dataset(
-            "glue", task, split=split, cache_dir=config.dataset_cache_dir
-        )
         if task == "mnli" and split == "validation":
             text_datast = load_dataset("glue", task, cache_dir=config.dataset_cache_dir)
             self.text_dataset = concatenate_datasets(
@@ -244,7 +241,7 @@ class GlueDatasetForPixel(Dataset):
         else:
             self.text_dataset = load_dataset(
                 "glue", task, split=split, cache_dir=config.dataset_cache_dir
-            )
+            ).shuffle(seed=config.seed)
         self.config = config
         self.transform = transform
         self.rng = rng
@@ -268,9 +265,11 @@ class GlueDatasetForPixel(Dataset):
         """
         A method that generates the scans from a squad sample
         """
-        sentence_1 = instance[TASK_TO_KEYS[self.task][0]]
+        sentence_1 = "<b>Sentence 1:</b> " + instance[TASK_TO_KEYS[self.task][0]]
         sentence_2 = (
-            instance[TASK_TO_KEYS[self.task][1]] if TASK_TO_KEYS[self.task][1] else ""
+            "<b>Sentence 2:</b> " + instance[TASK_TO_KEYS[self.task][1]]
+            if TASK_TO_KEYS[self.task][1]
+            else ""
         )
 
         scan = self.image_generator.generate(
@@ -287,6 +286,8 @@ class GlueDatasetForPixel(Dataset):
 
         if self.transform:
             scan = self.transform(scan)
+
+        scan = scan / 255.0
 
         inputs = {
             "pixel_values": scan,

@@ -27,7 +27,7 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/pixel-intermediate-final
+  value: Nadav/Pixel-real-scans-v2-all-fonts
 hub_strategy:
   desc: when to push to hub
   value: checkpoint
@@ -53,7 +53,7 @@ squad_version:
   value: 1
 seed:
   desc: random_seed
-  value: 42
+  value: 88
 fp16:
   desc: whether to train with half persicion
   value: True
@@ -94,13 +94,13 @@ dataloader_num_workers:
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_final_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v2_all_fonts"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
-  value: True
+  value: False
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_final_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v2_all_fonts"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
@@ -112,7 +112,7 @@ save_stategy:
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 10000
+  value: 5000
 report_to:
   desc: tool to report to
   value: ["wandb"]
@@ -126,7 +126,7 @@ model_config_name:
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD
+  value: Nadav/PretrainedPHD-v2-all-fonts
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
@@ -160,6 +160,9 @@ label_column_name:
 number_of_labels:
   desc: number of possible labels
   value: 1
+ignore_data_skip:
+  desc: whether to ignore data skips when training using a checkpoint
+  value: True
 
 # image generation settings
 html_template:
@@ -200,19 +203,19 @@ max_snippet_length:
   value: 20000
 mask_block_probability:
   desc: ratio of patches to be masked
-  value: 0.25
+  value: 0.29
 mask_ratio:
   desc: ratio of patches to be masked
-  value: 0.25
+  value: 0.29
 mask_block_size:
   desc: size of each masked block, each made of patches of size patch_base_size
   value: [32, 16]
 mask_max_merged_blocks_size:
   desc: maximum number of masked blocks merged together on each axis
-  value: [2, 6]
+  value: [4, 6]
 mask_min_merged_blocks_size:
   desc: minimum number of masked blocks merged together on each axis
-  value: [1, 2]
+  value: [2, 2]
 patch_base_size:
   desc: size in pixels of each patch
   value: [16, 16]

@@ -10,7 +10,7 @@ OPTIONAL_MARKER = "<OPTIONAL>"
 NON_OPTIONAL_MARKER = "<NON_OPTIONAL>"
 
 RETRACTED_VALUES = ["use_auth_token", "hub_token"]
-NON_OPTIONAL_VALUES = ["do_train"]
+OPTIONAL_VALUES = ["do_train", "do_eval"]
 NON_OPTIONAL_VALUES = ["run_name"]
 
 
@@ -104,7 +104,7 @@ def update_config(config: Config, update_dict: dict):
     update_config_key(config, "n_gpu", config["_n_gpu"])
 
     for key in config.keys():
-        if key in NON_OPTIONAL_VALUES and config[key] == OPTIONAL_MARKER:
+        if key in OPTIONAL_VALUES and config[key] == OPTIONAL_MARKER:
             update_config_key(config, key, False)
         if config[key] == "none" or config[key] == "None":
             update_config_key(config, key, None)

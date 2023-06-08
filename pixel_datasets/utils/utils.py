@@ -15,6 +15,13 @@ import io
 import pandas as pd
 import torch
 import math
+import pytesseract
+from .squad_utils import (
+    generate_pixel_mask_from_recangles,
+    merge_rectangle_lines,
+    convert_pixel_mask_to_patch_mask,
+)
+from scipy.ndimage import binary_erosion
 
 
 def merge_rectangles(rect1: Tuple[float], rect2: Tuple[float], tolerance=5):
@@ -209,8 +216,8 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
     # create a figure with rows x cols subplots
     fig, axes = plt.subplots(rows, cols, figsize=(10, 10))
     # adjust the spacing and margins of the subplots
-    fig.subplots_adjust(wspace=0.1, hspace=0.1)
-    fig.tight_layout(pad=0.1)
+    fig.subplots_adjust(wspace=0.01, hspace=0.01)
+    fig.tight_layout(pad=0.01)
     # loop through the arrays and plot them on each subplot
     for i in range(n):
         # get the i-th array and subplot
@@ -224,11 +231,15 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
             ax.imshow(array, cmap="gray")
         else:
             ax.imshow(array)
+        # ax.axis("off")
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        ax.tick_params(left=False, bottom=False)
         # set the title as the index of the array
-        ax.set_title(f"Array {i}")
+        # ax.set_title(f"Array {i}")
     # save the figure to a buffer
     buf = io.BytesIO()
-    fig.savefig(buf, format="png")
+    fig.savefig(buf, format="png", dpi=300)
     # close the figure
     plt.close(fig)
     # create a PIL Image object from the buffer
@@ -255,3 +266,101 @@ def plot_patch_mask(mask, patch_size=16):
     mask = np.kron(mask, np.ones((patch_size, patch_size)))
     plt.imshow(mask, cmap="gray")
     plt.savefig("/home/knf792/PycharmProjects/pixel-2/pixel_datasets/results/mask.png")
+
+
+def convert_torch_tensor_to_image(tensor):
+    """
+    a function to convert a torch tensor to an image
+    """
+    im = tensor.detach().cpu().numpy()
+    im = np.transpose(im, (1, 2, 0))
+    if im.max() == 1 and im.min() == 0:
+        im = im * 255
+    elif im.max() == 1 and im.min() == -1:
+        im = (im + 1) * 255 / 2
+    im = im.astype(np.uint8)
+    return Image.fromarray(im)
+
+
+def generate_rectangle_for_matched_answer(match, word, data_dict, all_text_offest_map):
+    start_id = all_text_offest_map[match]
+    end_id = all_text_offest_map[match + len(word) - 1]
+
+    all_rectangles = []
+    for i in range(start_id, end_id + 1):
+        if data_dict["text"][i].strip() != "":
+            all_rectangles.append(
+                (
+                    data_dict["left"][i],
+                    data_dict["top"][i],
+                    data_dict["width"][i],
+                    data_dict["height"][i],
+                )
+            )
+    return all_rectangles
+
+
+def locate_word_within_scan(data_dict, word):
+    all_text_offest_map = dict()
+    all_texts = ""
+    for i, text in enumerate(data_dict["text"]):
+        if text.strip() != "":
+            for j in range(len(text) + 1):
+                all_text_offest_map[len(all_texts) + j] = i
+            all_texts += text + " "
+
+    match = all_texts.find(word)
+    return match, all_text_offest_map
+
+
+def select_random_word_from_scan(data_dict):
+    valid_words = [
+        i for i, word in enumerate(data_dict["text"]) if len(word.strip()) > 2
+    ]
+    random_word_loc = np.random.choice(valid_words)
+    return data_dict["text"][random_word_loc]
+
+
+def mask_single_word_from_scan(im: np.ndarray, word: str = None):
+    image = Image.fromarray(im.astype(np.uint8))
+    data_dict = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    if word is None:
+        word = select_random_word_from_scan(data_dict)
+    match, all_text_offest_map = locate_word_within_scan(data_dict, word)
+    all_rectangles = generate_rectangle_for_matched_answer(
+        match, word, data_dict, all_text_offest_map
+    )
+    matched_rectangles = merge_rectangle_lines(all_rectangles, tolerance=10)
+    return generate_pixel_mask_from_recangles(matched_rectangles, im.shape)
+
+
+def convert_patch_mask_to_pixel_mask(mask):
+    if len(mask.shape) == 1:
+        mask = mask.reshape((23, 23))
+    return np.kron(mask, np.ones((16, 16)))
+
+
+def merge_mask_with_image(mask, image, alpha=0.5, colour=(255, 0, 0)):
+    mask = np.stack([mask, mask, mask], axis=-1)
+    if colour is not None:
+        colour_mask = mask * np.array(colour)
+        image[mask == 1] = image[mask == 1] * alpha + colour_mask[mask == 1] * (
+            1 - alpha
+        )
+    else:
+        image[mask == 1] = image[mask == 1] * alpha
+
+    return image
+
+
+def get_mask_edges(mask, times=1):
+    # mask is a 2D numpy array of 0s and 1s
+    # return an array of the same size where only the edges of each connected component are 1
+    # use binary erosion to shrink each component by one pixel
+    eroded_mask = binary_erosion(mask)
+    for _ in range(times - 1):
+        eroded_mask = binary_erosion(eroded_mask)
+    # subtract the eroded mask from the original mask to get the edges
+    edges = mask - eroded_mask
+    # return the edges as an array of 0s and 1s
+    return edges

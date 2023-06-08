@@ -344,7 +344,6 @@ class PIXELForSequenceClassification(ViTForImageClassification):
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
-
         outputs = self.vit(
             pixel_values,
             attention_mask=attention_mask,
@@ -356,7 +355,6 @@ class PIXELForSequenceClassification(ViTForImageClassification):
             else self.config.interpolate_pos_encoding,
             return_dict=return_dict,
         )
-
         if self.add_cls_pooling_layer:
             sequence_output = outputs[1]
         else:

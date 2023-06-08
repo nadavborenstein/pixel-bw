@@ -72,7 +72,7 @@ class VisualizationCallback(TrainerCallback):
             eval_dataloader.dataset.steps_taken = 0
             batch = next(iter(eval_dataloader))
         batch = {k: v.to(args.device) for k, v in batch.items()}
-        logger.info(f"visualizing {batch['attention_mask'].shape[0]} images")
+        logger.info(f"visualizing {min(32, batch['attention_mask'].shape[0])} images")
 
         if self.only_input:
             self._visualize_inputs(model, batch)
@@ -86,7 +86,7 @@ class VisualizationCallback(TrainerCallback):
                 attention_mask=batch["attention_mask"],
                 patch_mask=batch["patch_mask"],
             )
-        for i in range(len(outputs["logits"])):  # TODO don't duplicate code
+        for i in range(min(len(outputs["logits"]), 32)):  # TODO don't duplicate code
             predictions = (
                 model.unpatchify(outputs["logits"][i].unsqueeze(0))
                 .detach()

@@ -8,3 +8,4 @@ from .optimization import *
 from .prerendering import *
 from .training import *
 from .transforms import *
+from .inference import *

@@ -51,6 +51,7 @@ from pixel import (
     PIXELTrainingArguments,
     PoolingMode,
 )
+from pixel.scripts.training.callbacks import VisualizationCallback
 
 import wandb
 from wandb.sdk.wandb_config import Config
@@ -149,7 +150,11 @@ def get_datasets(args: Config, seed: int):
         config=args, task=args.task_name, split="train", transform=transform, rng=rng
     )
     test_dataset = GlueDatasetForPixel(
-        config=args, task=args.task_name, split="validation", transform=transform, rng=rng
+        config=args,
+        task=args.task_name,
+        split="validation",
+        transform=transform,
+        rng=rng,
     )
 
     return train_dataset, test_dataset
@@ -268,7 +273,6 @@ def main(args: Config):
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
-        breakpoint()
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
         if args.task_name is not None:
@@ -290,6 +294,12 @@ def main(args: Config):
         compute_metrics=compute_metrics,
         data_collator=get_collator(is_regression=is_regression),
     )
+
+    if args.do_eval and "wandb" in args.report_to:
+        logger.info(f"adding visualization callback")
+        trainer.add_callback(
+            VisualizationCallback(visualize_train=False, only_input=True)
+        )
 
     # Training
     if args.do_train:

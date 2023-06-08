@@ -6,16 +6,16 @@ run_name:
   value: <NON_OPTIONAL>
 task_name:
   desc: glue task name. One of [cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli]
-  value: sst2
+  value: mrpc
 use_auth_token:
   desc: auth token for wandb
   value: <RETRACTED>
 do_train:
   desc: whether to train the model. A non optinoal setting
-  value: <OPTINAL>
+  value: <OPTIONAL>
 do_eval:
   desc: whether to evaluate the model. A non optinoal setting
-  value: <OPTINAL>
+  value: <OPTIONAL>
 resume_from_checkpoint:
   desc: whether to resume from last saved checkpoint
   value: none
@@ -47,13 +47,13 @@ model_cache_dir:
 # training config
 num_train_epochs:
   desc: Number of epochs to train over
-  value: 5
+  value: 500
 max_steps:
   desc: maxumim number of training steps
   value: -1
 seed:
   desc: random_seed
-  value: 42
+  value: 7
 fp16:
   desc: whether to train with half persicion
   value: True
@@ -65,25 +65,28 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 22
+  value: 64
 per_device_eval_batch_size:
   desc: evaluation batch size
   value: 16
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
-  value: 1
+  value: 2
 base_learning_rate:
   desc: base learning rate
-  value: 1.5e-4
+  value: 3e-5
 lr_scheduler_type:
   desc: type of the lr scheduler
   value: "cosine"
 warmup_ratio:
   desc: ratio used for warmup
   value: 0
+warmup_steps:
+  desc: number of warmup steps
+  value: 100
 evaluation_strategy:
   desc: when to evaluate the model, in steps
-  value: steps
+  value: "steps"
 eval_steps:
   desc: frequency of model evaluation
   value: 50
@@ -92,10 +95,13 @@ ddp_find_unused_parameters:
   value: False
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 22
+  value: 43
 max_train_samples:
   desc: max train sample
   value: None
+weight_decay:
+  desc: value of weight decay
+  value: 0.
 
 # logging config
 output_dir:
@@ -115,7 +121,7 @@ logging_steps:
   value: 50
 save_stategy:
   desc: save strategy of the trainer
-  value: epoch
+  value: steps
 save_steps:
   desc: frequencey of saving the model
   value: 5000
@@ -126,13 +132,13 @@ report_to:
 # model config
 dropout_prob:
   desc: dropout probability
-  value: 0.1
+  value: 0.3
 model_config_name:
   desc: Pretrained config name or path if not the same as model_name_or_path
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD
+  value: Nadav/PretrainedPHD-v2
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
@@ -226,8 +232,8 @@ embed_real_image:
   desc: Whether to embed real images in white background
   value: False
 label_names:
-  desc: Not sure...
-  value: ["pixel_values"]
+  desc: Name of the labels colu,n
+  value: ["labels"]
 remove_unused_columns:
   desc: not sure...
   value: False
