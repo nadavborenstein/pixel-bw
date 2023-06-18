@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+import numpy as np
 
 import torch
 import wandb
@@ -48,7 +49,6 @@ class VisualizationCallback(TrainerCallback):
             )
             figures_to_log["original_image"].append(original_image)
         self._log_image(figures_to_log)
-
 
     def on_evaluate(
         self,
@@ -130,6 +130,95 @@ class VisualizationCallback(TrainerCallback):
                 + predictions * mask * attention_mask
             )
             figures_to_log["reconstruction"].append(reconstruction)
+
+        self._log_image(figures_to_log)
+        model.train()
+
+
+class SquadVisualizationCallback(TrainerCallback):
+    def __init__(self, args=None, visualize_train=True, only_input=False):
+        self.args = args
+        self.visualize_train = visualize_train
+        self.only_input = only_input
+
+    def _log_image(self, figures_to_log: dict):
+        for k, v in figures_to_log.items():
+            wandb.log({k: [wandb.Image(x) for x in v]})
+
+    def _visualize_inputs(self, model, batch):
+        figures_to_log = defaultdict(list)
+        for i in range(batch["pixel_values"].shape[0]):
+            original_image = (
+                model.unpatchify(model.patchify(batch["pixel_values"][i].unsqueeze(0)))
+                .detach()
+                .cpu()
+                .squeeze()
+            )
+            figures_to_log["original_image"].append(original_image)
+        self._log_image(figures_to_log)
+
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        train_dataloader=None,
+        eval_dataloader=None,
+        model=None,
+        **kwargs,
+    ):
+        logger.info(
+            f"logging images. Global rank: {state.is_world_process_zero}, local rank: {state.is_local_process_zero}"
+        )
+        if not state.is_world_process_zero:
+            return
+
+        if self.visualize_train:
+            batch = next(iter(train_dataloader))
+        else:
+            eval_dataloader.dataset.steps_taken = 0
+            batch = next(iter(eval_dataloader))
+        batch = {k: v.to(args.device) for k, v in batch.items()}
+        logger.info(f"visualizing {min(32, batch['attention_mask'].shape[0])} images")
+
+        if self.only_input:
+            self._visualize_inputs(model, batch)
+            return
+
+        figures_to_log = defaultdict(list)
+        model.eval()
+        with torch.inference_mode():
+            outputs = model(
+                pixel_values=batch["pixel_values"],
+                attention_mask=batch["attention_mask"],
+            )
+        for i in range(min(len(outputs["logits"]), 32)):  # TODO don't duplicate code
+            mask = outputs["logits"][i].detach().cpu().numpy()
+            mask = np.argmax(mask, axis=1)
+            mask = mask.reshape(23, 23)
+            mask = np.kron(mask, np.ones((16, 16)))
+            mask = np.stack([mask, mask, mask], axis=2)
+            
+            real_mask = batch["labels"][i].detach().cpu().numpy()
+            real_mask = real_mask.reshape(23, 23)
+            real_mask = np.kron(real_mask, np.ones((16, 16)))
+            real_mask = np.stack([real_mask, real_mask, real_mask], axis=2)
+            
+            figures_to_log["mask"].append(mask)
+
+            original_image = batch["pixel_values"][i].detach().cpu().numpy()
+            original_image = original_image.transpose(1, 2, 0)
+            original_image = np.clip(original_image * 255, 0, 255)
+            
+            masked_prediction = original_image * (1 - mask) + original_image * mask * 0.6
+            masked_prediction = np.clip(masked_prediction, 0, 255)
+            
+            masked_real = original_image * (1 - real_mask) + original_image * real_mask * 0.6
+            masked_real = np.clip(masked_real, 0, 255)
+            
+            figures_to_log["original_image"].append(original_image)
+            figures_to_log["masked_prediction"].append(masked_prediction)
+            figures_to_log["masked_real"].append(masked_real)
 
         self._log_image(figures_to_log)
         model.train()

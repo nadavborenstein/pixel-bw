@@ -20,7 +20,6 @@ from dataclasses import asdict
 
 import wandb
 
-
 from typing import Any, Dict
 import numpy as np
 import datasets
@@ -34,16 +33,8 @@ from pixel.utils import InterleaveTorchDataset
 
 from pixel import (
     PIXELConfig,
-    PIXELEmbeddings,
     PIXELForPreTraining,
     PIXELTrainerForPretraining,
-    get_2d_sincos_pos_embed,
-    process_remaining_strings,
-    get_config_dict,
-)
-from transformers import (
-    HfArgumentParser,
-    ViTFeatureExtractor,
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
@@ -61,7 +52,6 @@ from configs.utils import (
 )
 
 """ Pre-training a PIXEL model as an MAE (masked autoencoder)"""
-# os.environ["PATH"] += ":/home/knf792/apps/lfs/bin"
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +135,6 @@ def get_datasets(args):
 
 
 def main(args: Config):
-    # wandb.init(project="pixel",config=config_dict, name=config_dict["run_name"])
-
     # Setup logging
     log_level = logging.INFO
     logging.basicConfig(
@@ -243,7 +231,7 @@ def main(args: Config):
     )
 
     # Create model
-    if args.model_name_or_path != "none":
+    if args.model_name_or_path:
         logger.info(f"Training from pretrained model {args.model_name_or_path}")
         model = PIXELForPreTraining.from_pretrained(
             args.model_name_or_path,
@@ -254,7 +242,6 @@ def main(args: Config):
     else:
         logger.info("Training new model from scratch")
         model = PIXELForPreTraining(config)
-
 
     logger.info("***** Final model config *****")
     logger.info(config)
@@ -291,7 +278,7 @@ def main(args: Config):
         data_collator=collate_fn,
     )
 
-    if args.do_eval:
+    if args.do_eval and "wandb" in args.report_to:
         logger.info(f"adding visualization callback")
         trainer.add_callback(VisualizationCallback(visualize_train=False))
 
@@ -302,7 +289,7 @@ def main(args: Config):
             checkpoint = args.resume_from_checkpoint
         elif last_checkpoint is not None:
             checkpoint = last_checkpoint
-        logger.info(f"Resuming from Checkpoint: {checkpoint}")
+            logger.info(f"Resuming from Checkpoint: {checkpoint}")
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()
         trainer.log_metrics("train", train_result.metrics)

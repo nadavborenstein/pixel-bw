@@ -64,9 +64,11 @@ def evaluate_config_before_update(config: Config):
     """
     for key in config.keys():
         if key in RETRACTED_VALUES:
-            assert (
-                config[key] == RETRACTED_MARKER
-            ), "potential security issue: config[{}] = {}".format(key, config[key])
+            assert config[key] == RETRACTED_MARKER or config[key] in {
+                "none",
+                "None",
+                None,
+            }, "potential security issue: config[{}] = {}".format(key, config[key])
         if key in NON_OPTIONAL_VALUES and key in config.keys():
             assert config[key] != OPTIONAL_MARKER, "potential utiliy issue: {}".format(
                 key

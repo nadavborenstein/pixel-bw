@@ -38,7 +38,7 @@ from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 
-from pixel_datasets.glue_dataset_generator import GlueDatasetForPixel
+from pixel_datasets.glue_dataset_generator import GlueDatasetForPixel, GlueDatasetFromHub
 from pixel_datasets.dataset_transformations import (
     SyntheticDatasetTransform,
     SimpleTorchTransform,
@@ -143,19 +143,19 @@ def get_collator(is_regression: bool = False):
 
 
 def get_datasets(args: Config, seed: int):
-    rng = np.random.RandomState(seed)
-    transform = SimpleTorchTransform(args, rng)
-
-    train_dataset = GlueDatasetForPixel(
-        config=args, task=args.task_name, split="train", transform=transform, rng=rng
-    )
-    test_dataset = GlueDatasetForPixel(
-        config=args,
-        task=args.task_name,
-        split="validation",
-        transform=transform,
-        rng=rng,
-    )
+    if args.noisy_dataset:
+        rng = np.random.RandomState(seed)
+        transform = SyntheticDatasetTransform(args, rng)
+        train_dataset = GlueDatasetForPixel(
+            config=args, task=args.task_name, split="train", transform=transform, rng=rng
+        )
+        test_dataset = load_dataset(f"Nadav/pixel_glue_{args.task_name}_high_noise", split="validation")
+        test_dataset = GlueDatasetFromHub(base_dataest=test_dataset, config=args)
+    else:
+        train_dataset = load_dataset(f"Nadav/pixel_glue_{args.task_name}", split="train")
+        test_dataset = load_dataset(f"Nadav/pixel_glue_{args.task_name}", split="validation")
+        train_dataset = GlueDatasetFromHub(base_dataest=train_dataset, config=args)
+        test_dataset = GlueDatasetFromHub(base_dataest=test_dataset, config=args)
 
     return train_dataset, test_dataset
 
@@ -211,7 +211,7 @@ def main(args: Config):
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
     # Labels
-    raw_dataset = train_dataset.text_dataset
+    raw_dataset = train_dataset.base_dataset
     is_regression = args.task_name == "stsb"
     if not is_regression:
         label_list = raw_dataset.features["label"].names
@@ -335,32 +335,17 @@ def main(args: Config):
             logger.info(f"  {key} = {value}")
         trainer.log_metrics("eval", outputs)
 
-    kwargs = {
-        "finetuned_from": args.model_name_or_path,
-        "tasks": "text-classification",
-    }
-    if args.task_name is not None:
-        kwargs["language"] = "en"
-        kwargs["dataset_tags"] = "glue"
-        kwargs["dataset_args"] = args.task_name
-        kwargs["dataset"] = f"GLUE {args.task_name.upper()}"
-
-    if args.push_to_hub:
-        trainer.push_to_hub(**kwargs)
-    else:
-        trainer.create_model_card(**kwargs)
-
 
 if __name__ == "__main__":
     command_line_args = read_args()
     wandb.init(
         project="pixel",
         config="configs/glue_config.yaml",
-        mode="disabled",
+        # mode="disabled",
         name=command_line_args["run_name"],
         save_code=True,
     )
-    assert evaluate_config_before_update(wandb.config)
+    # assert evaluate_config_before_update(wandb.config)
     update_config(wandb.config, command_line_args)
     assert evaluate_config_after_update(wandb.config)
 

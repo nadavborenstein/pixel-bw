@@ -1,7 +1,4 @@
 path,hasLower,hasNum,base_size
-fonts/106beats.ttf,True,True,22.0
-fonts/3M Trislan.ttf,True,True,22.0
-fonts/5yearsoldfont.ttf,True,True,22.0
 fonts/ABeeZee-Italic.ttf,True,True,19.0
 fonts/ABeeZee-Regular.ttf,True,True,19.0
 fonts/AIRBORNE GP.ttf,True,True,25.0
@@ -370,7 +367,6 @@ fonts/AvrileSerif-SemiBoldItalic.ttf,True,True,18.0
 fonts/AvrileSerif-Thin.ttf,True,True,18.0
 fonts/AvrileSerif-ThinItalic.ttf,True,True,18.0
 fonts/Awery.ttf,True,True,21.0
-fonts/Azurite (1).ttf,True,True,22.0
 fonts/B20Sans.ttf,True,True,20.0
 fonts/BERNN___.TTF,True,True,21.0
 fonts/BETAD___.TTF,True,True,22.0
@@ -898,7 +894,6 @@ fonts/Comme-ExtraLight.ttf,True,True,19.0
 fonts/Comme-Heavy.ttf,True,True,19.0
 fonts/Comme-Light.ttf,True,True,19.0
 fonts/Comme-Medium.ttf,True,True,19.0
-fonts/Comme-Regular (1).ttf,True,True,22.0
 fonts/Comme-SemiBold.ttf,True,True,19.0
 fonts/Comme-Thin.ttf,True,True,19.0
 fonts/Comprehension-Dark.otf,True,True,23.0
@@ -2281,12 +2276,6 @@ fonts/Hultog Italic.ttf,True,True,24.0
 fonts/Hultog.ttf,True,True,25.0
 fonts/Humanistic.ttf,True,True,25.0
 fonts/HumboldtFraktur-Regular.ttf,True,True,19.0
-fonts/Hurufo & Numero Bold Italic.ttf,True,True,22.0
-fonts/Hurufo & Numero Bold.ttf,True,True,22.0
-fonts/Hurufo & Numero Italic.ttf,True,True,22.0
-fonts/Hurufo & Numero Thin Italic.ttf,True,True,22.0
-fonts/Hurufo & Numero Thin.ttf,True,True,22.0
-fonts/Hurufo & Numero.ttf,True,True,22.0
 fonts/HutSutRalstonNF.otf,True,True,23.0
 fonts/HydrophiliaLiquid-Regular.otf,True,True,18.0
 fonts/HydrophiliaLiquid-Regular.ttf,True,True,18.0
@@ -3683,7 +3672,6 @@ fonts/RITAEXB_.ttf,True,True,18.0
 fonts/RUTAN___.TTF,True,True,23.0
 fonts/Rabelo Regular.otf,True,True,19.0
 fonts/Rabelo Regular.ttf,True,True,19.0
-fonts/Rachel's Requiem Regular.ttf,True,True,142.0
 fonts/RacingSansOne-Regular.ttf,True,True,23.0
 fonts/RadioNewsman.ttf,True,True,15.0
 fonts/Radley-Italic.ttf,True,True,23.0
@@ -4174,15 +4162,6 @@ fonts/SourceSerifPro-Regular.ttf,True,True,21.0
 fonts/SourceSerifPro-Semibold.otf,True,True,20.0
 fonts/SourceSerifPro-Semibold.ttf,True,True,20.0
 fonts/Souses.otf,True,True,19.0
-fonts/SpaceGrotesk-Bold.otf,True,True,20.0
-fonts/SpaceGrotesk-Bold.ttf,True,True,20.0
-fonts/SpaceGrotesk-Light.otf,True,True,20.0
-fonts/SpaceGrotesk-Light.ttf,True,True,20.0
-fonts/SpaceGrotesk-Medium.otf,True,True,20.0
-fonts/SpaceGrotesk-Medium.ttf,True,True,20.0
-fonts/SpaceGrotesk-Regular.otf,True,True,20.0
-fonts/SpaceGrotesk-Regular.ttf,True,True,20.0
-fonts/SpaceGrotesk[wght].ttf,True,True,22.0
 fonts/SpaceMono-Bold.ttf,True,True,20.0
 fonts/SpaceMono-BoldItalic.ttf,True,True,20.0
 fonts/SpaceMono-Italic.ttf,True,True,20.0

@@ -21,7 +21,7 @@ from .squad_utils import (
     merge_rectangle_lines,
     convert_pixel_mask_to_patch_mask,
 )
-from scipy.ndimage import binary_erosion
+from scipy.ndimage import binary_erosion, binary_dilation
 
 
 def merge_rectangles(rect1: Tuple[float], rect2: Tuple[float], tolerance=5):
@@ -205,7 +205,7 @@ def concatenate_images(images: List[np.ndarray], axis=0, max_heigh=368):
     return concatenated_scans
 
 
-def plot_arrays(arrays: List[np.ndarray]) -> Image:
+def plot_arrays(arrays: List[np.ndarray], titles=None) -> Image:
     # get the number of arrays
     n: int = len(arrays)
     # get the shape of each array
@@ -216,7 +216,7 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
     # create a figure with rows x cols subplots
     fig, axes = plt.subplots(rows, cols, figsize=(10, 10))
     # adjust the spacing and margins of the subplots
-    fig.subplots_adjust(wspace=0.01, hspace=0.01)
+    fig.subplots_adjust(wspace=-0.1, hspace=-0.1)
     fig.tight_layout(pad=0.01)
     # loop through the arrays and plot them on each subplot
     for i in range(n):
@@ -236,9 +236,11 @@ def plot_arrays(arrays: List[np.ndarray]) -> Image:
         ax.set_yticklabels([])
         ax.tick_params(left=False, bottom=False)
         # set the title as the index of the array
-        # ax.set_title(f"Array {i}")
+        if titles:
+            ax.set_title(titles[i])
     # save the figure to a buffer
     buf = io.BytesIO()
+    fig.subplots_adjust(top=0.95)
     fig.savefig(buf, format="png", dpi=300)
     # close the figure
     plt.close(fig)
@@ -315,23 +317,32 @@ def locate_word_within_scan(data_dict, word):
 
 def select_random_word_from_scan(data_dict):
     valid_words = [
-        i for i, word in enumerate(data_dict["text"]) if len(word.strip()) > 2
+        i for i, word in enumerate(data_dict["text"]) if len(word.strip()) > 3
     ]
     random_word_loc = np.random.choice(valid_words)
     return data_dict["text"][random_word_loc]
 
 
-def mask_single_word_from_scan(im: np.ndarray, word: str = None):
-    image = Image.fromarray(im.astype(np.uint8))
-    data_dict = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-    if word is None:
-        word = select_random_word_from_scan(data_dict)
-    match, all_text_offest_map = locate_word_within_scan(data_dict, word)
-    all_rectangles = generate_rectangle_for_matched_answer(
-        match, word, data_dict, all_text_offest_map
-    )
-    matched_rectangles = merge_rectangle_lines(all_rectangles, tolerance=10)
-    return generate_pixel_mask_from_recangles(matched_rectangles, im.shape)
+def mask_single_word_from_scan(im, word: str = None):
+    pixel_mask = np.zeros(im.size[:2])
+    while pixel_mask.sum() == 0:
+        if type(im) == np.ndarray:
+            if im.max() == 1 and im.min() == 0:
+                im = im * 255
+            im = Image.fromarray(im.astype(np.uint8))
+
+        data_dict = pytesseract.image_to_data(im, output_type=pytesseract.Output.DICT)
+        if word is None:
+            word = select_random_word_from_scan(data_dict)
+        match, all_text_offest_map = locate_word_within_scan(data_dict, word)
+        all_rectangles = generate_rectangle_for_matched_answer(
+            match, word, data_dict, all_text_offest_map
+        )
+        matched_rectangles = merge_rectangle_lines(all_rectangles, tolerance=10)
+        pixel_mask = generate_pixel_mask_from_recangles(matched_rectangles, im.size)
+    for i in range(10):
+        pixel_mask = binary_dilation(pixel_mask)
+    return pixel_mask, data_dict, word
 
 
 def convert_patch_mask_to_pixel_mask(mask):

@@ -6,7 +6,12 @@ import wandb
 from torch.utils.data import DataLoader
 from transformers import Trainer, is_torch_tpu_available, TrainerCallback
 from transformers.deepspeed import deepspeed_init
-from transformers.trainer_pt_utils import IterableDatasetShard, find_batch_size, nested_concat, nested_numpify
+from transformers.trainer_pt_utils import (
+    IterableDatasetShard,
+    find_batch_size,
+    nested_concat,
+    nested_numpify,
+)
 from transformers.trainer_utils import (
     EvalLoopOutput,
     EvalPrediction,
@@ -67,7 +72,9 @@ class PIXELTrainerForPretraining(PIXELTrainer):
     PIXELTrainer for pretraining
     """
 
-    def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
+    def create_scheduler(
+        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+    ):
         """
         Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
         passed as an argument.
@@ -105,7 +112,11 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
         """
         args = self.args
 
-        prediction_loss_only = prediction_loss_only if prediction_loss_only is not None else args.prediction_loss_only
+        prediction_loss_only = (
+            prediction_loss_only
+            if prediction_loss_only is not None
+            else args.prediction_loss_only
+        )
 
         # if eval is called w/o train init deepspeed here
         if args.deepspeed and not self.deepspeed:
@@ -144,7 +155,9 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
         eval_dataset = dataloader.dataset
 
         if is_torch_tpu_available():
-            dataloader = pl.ParallelLoader(dataloader, [args.device]).per_device_loader(args.device)
+            dataloader = pl.ParallelLoader(dataloader, [args.device]).per_device_loader(
+                args.device
+            )
 
         if args.past_index >= 0:
             self._past = None
@@ -172,7 +185,9 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
                     batch_size = observed_batch_size
 
             # Prediction step
-            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            loss, logits, labels = self.prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys
+            )
 
             arc_logits, rel_logits = logits
             arc_labels, rel_labels = labels
@@ -195,31 +210,58 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
             # Update containers on host
             if loss is not None:
                 losses = self._nested_gather(loss.repeat(batch_size))
-                losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
+                losses_host = (
+                    losses
+                    if losses_host is None
+                    else torch.cat((losses_host, losses), dim=0)
+                )
             if labels is not None:
                 labels = self._pad_across_processes(labels)
                 labels = self._nested_gather(labels)
-                labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+                labels_host = (
+                    labels
+                    if labels_host is None
+                    else nested_concat(labels_host, labels, padding_index=-100)
+                )
             if logits is not None:
                 logits = self._pad_across_processes(logits)
                 logits = self._nested_gather(logits)
                 if self.preprocess_logits_for_metrics is not None:
                     logits = self.preprocess_logits_for_metrics(logits, labels)
-                preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
-            self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
+                preds_host = (
+                    logits
+                    if preds_host is None
+                    else nested_concat(preds_host, logits, padding_index=-100)
+                )
+            self.control = self.callback_handler.on_prediction_step(
+                args, self.state, self.control
+            )
 
             # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
-            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
+            if (
+                args.eval_accumulation_steps is not None
+                and (step + 1) % args.eval_accumulation_steps == 0
+            ):
                 if losses_host is not None:
                     losses = nested_numpify(losses_host)
-                    all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+                    all_losses = (
+                        losses
+                        if all_losses is None
+                        else np.concatenate((all_losses, losses), axis=0)
+                    )
                 if preds_host is not None:
                     logits = nested_numpify(preds_host)
-                    all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+                    all_preds = (
+                        logits
+                        if all_preds is None
+                        else nested_concat(all_preds, logits, padding_index=-100)
+                    )
                 if labels_host is not None:
                     labels = nested_numpify(labels_host)
                     all_labels = (
-                        labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+                        labels
+                        if all_labels is None
+                        else nested_concat(all_labels, labels, padding_index=-100)
                     )
 
                 # Set back to None to begin a new accumulation
@@ -232,20 +274,34 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
         # Gather all remaining tensors and put them back on the CPU
         if losses_host is not None:
             losses = nested_numpify(losses_host)
-            all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+            all_losses = (
+                losses
+                if all_losses is None
+                else np.concatenate((all_losses, losses), axis=0)
+            )
         if preds_host is not None:
             logits = nested_numpify(preds_host)
-            all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+            all_preds = (
+                logits
+                if all_preds is None
+                else nested_concat(all_preds, logits, padding_index=-100)
+            )
         if labels_host is not None:
             labels = nested_numpify(labels_host)
-            all_labels = labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+            all_labels = (
+                labels
+                if all_labels is None
+                else nested_concat(all_labels, labels, padding_index=-100)
+            )
 
         # Number of samples
         if has_length(eval_dataset):
             num_samples = len(eval_dataset)
         # The instance check is weird and does not actually check for the type, but whether the dataset has the right
         # methods. Therefore we need to make sure it also has the attribute.
-        elif isinstance(eval_dataset, IterableDatasetShard) and hasattr(eval_dataset, "num_examples"):
+        elif isinstance(eval_dataset, IterableDatasetShard) and hasattr(
+            eval_dataset, "num_examples"
+        ):
             num_samples = eval_dataset.num_examples
         else:
             num_samples = observed_num_examples
@@ -263,8 +319,14 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
         """
 
         # Metrics!
-        if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
-            metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
+        if (
+            self.compute_metrics is not None
+            and all_preds is not None
+            and all_labels is not None
+        ):
+            metrics = self.compute_metrics(
+                EvalPrediction(predictions=all_preds, label_ids=all_labels)
+            )
         else:
             metrics = {}
 
@@ -279,7 +341,12 @@ class PIXELTrainerForBiaffineParsing(PIXELTrainer):
             if not key.startswith(f"{metric_key_prefix}_"):
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
-        return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
+        return EvalLoopOutput(
+            predictions=all_preds,
+            label_ids=all_labels,
+            metrics=metrics,
+            num_samples=num_samples,
+        )
 
 
 class PIXELTrainerForQuestionAnswering(PIXELTrainer):
@@ -292,7 +359,13 @@ class PIXELTrainerForQuestionAnswering(PIXELTrainer):
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
 
-    def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
+    def evaluate(
+        self,
+        eval_dataset=None,
+        eval_examples=None,
+        ignore_keys=None,
+        metric_key_prefix: str = "eval",
+    ):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         eval_examples = self.eval_examples if eval_examples is None else eval_examples
@@ -306,7 +379,9 @@ class PIXELTrainerForQuestionAnswering(PIXELTrainer):
             self.compute_metrics = compute_metrics
 
         if self.post_process_function is not None and self.compute_metrics is not None:
-            eval_preds = self.post_process_function(eval_examples, eval_dataset, output.predictions)
+            eval_preds = self.post_process_function(
+                eval_examples, eval_dataset, output.predictions
+            )
             metrics = self.compute_metrics(eval_preds)
 
             # Prefix all keys with metric_key_prefix + '_'
@@ -318,10 +393,18 @@ class PIXELTrainerForQuestionAnswering(PIXELTrainer):
         else:
             metrics = {}
 
-        self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, metrics)
+        self.control = self.callback_handler.on_evaluate(
+            self.args, self.state, self.control, metrics
+        )
         return metrics
 
-    def predict(self, predict_dataset, predict_examples, ignore_keys=None, metric_key_prefix: str = "test"):
+    def predict(
+        self,
+        predict_dataset,
+        predict_examples,
+        ignore_keys=None,
+        metric_key_prefix: str = "test",
+    ):
         predict_dataloader = self.get_test_dataloader(predict_dataset)
 
         # Temporarily disable metric computation, we will do it in the loop here.
@@ -335,7 +418,9 @@ class PIXELTrainerForQuestionAnswering(PIXELTrainer):
         if self.post_process_function is None or self.compute_metrics is None:
             return output
 
-        predictions = self.post_process_function(predict_examples, predict_dataset, output.predictions, "predict")
+        predictions = self.post_process_function(
+            predict_examples, predict_dataset, output.predictions, "predict"
+        )
         metrics = self.compute_metrics(predictions)
 
         # Prefix all keys with metric_key_prefix + '_'
@@ -343,4 +428,8 @@ class PIXELTrainerForQuestionAnswering(PIXELTrainer):
             if not key.startswith(f"{metric_key_prefix}_"):
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
-        return PredictionOutput(predictions=predictions.predictions, label_ids=predictions.label_ids, metrics=metrics)
+        return PredictionOutput(
+            predictions=predictions.predictions,
+            label_ids=predictions.label_ids,
+            metrics=metrics,
+        )

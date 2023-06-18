@@ -400,6 +400,115 @@ class PIXELForSequenceClassification(ViTForImageClassification):
         )
 
 
+class PIXELForSequenceEmbedding(ViTForImageClassification):
+    def __init__(
+        self,
+        config,
+        pooling_mode: PoolingMode = PoolingMode.MEAN,
+        add_layer_norm: bool = True,
+    ):
+        super().__init__(config)
+
+        if not hasattr(self.config, "interpolate_pos_encoding"):
+            self.config.interpolate_pos_encoding = False
+
+        self.num_labels = config.num_labels
+
+        self.add_cls_pooling_layer = pooling_mode == PoolingMode.CLS
+        self.vit = ViTModel(config, add_pooling_layer=self.add_cls_pooling_layer)
+
+        # Classifier head
+        self.pooler = PoolingForSequenceClassificationHead(
+            hidden_size=config.hidden_size,
+            hidden_dropout_prob=config.hidden_dropout_prob,
+            add_layer_norm=add_layer_norm,
+            pooling_mode=pooling_mode,
+        )
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def patchify(self, imgs):
+        """
+        imgs: (N, 3, H, W) x: (N, L, patch_size**2 *3)
+        """
+        p = self.vit.embeddings.patch_embeddings.patch_size[0]
+        assert imgs.shape[2] % p == 0 and imgs.shape[3] % p == 0
+
+        h = imgs.shape[2] // p
+        w = imgs.shape[3] // p
+        x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
+        x = torch.einsum("nchpwq->nhwpqc", x)
+        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
+
+        return x
+
+    def unpatchify(self, x):
+        """
+        x: (N, L, patch_size**2 *3) imgs: (N, 3, H, W)
+        """
+        p = self.vit.embeddings.patch_embeddings.patch_size[0]
+        h = w = int(x.shape[1] ** 0.5)
+        assert h * w == x.shape[1]
+
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
+        x = torch.einsum("nhwpqc->nchpwq", x)
+        imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
+        return imgs
+
+    def forward(
+        self,
+        pixel_values=None,
+        attention_mask=None,
+        head_mask=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        interpolate_pos_encoding=None,
+        return_dict=None,
+    ):
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the image classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
+            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
+        outputs = self.vit(
+            pixel_values,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            interpolate_pos_encoding=interpolate_pos_encoding
+            if interpolate_pos_encoding is not None
+            else self.config.interpolate_pos_encoding,
+            return_dict=return_dict,
+        )
+        if self.add_cls_pooling_layer:
+            sequence_output = outputs[1]
+        else:
+            # When not using CLS pooling mode, discard it
+            sequence_output = outputs[0][:, 1:, :]
+
+        logits = self.pooler(sequence_output, attention_mask)
+        logits = self.classifier(logits)
+
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return output
+
+        return SequenceClassifierOutput(
+            loss=None,
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+
+
 class PIXELForQuestionAnswering(ViTForImageClassification):
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 

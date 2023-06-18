@@ -10,6 +10,9 @@ from weasyprint import HTML, CSS
 from weasyprint.fonts import FontConfiguration
 from cairocffi import FORMAT_ARGB32
 import cv2
+from wandb.sdk.wandb_config import Config
+import platform
+import pytesseract
 
 
 @dataclass
@@ -75,7 +78,9 @@ def render_html_as_image(
         )
 
 
-def get_random_custom_font(font_list, rng, min_size_factor=0.65, max_size_factor=1.15) -> CustomFont:
+def get_random_custom_font(
+    font_list, rng, min_size_factor=0.65, max_size_factor=1.15
+) -> CustomFont:
     """
     A method that returns a random custom font from the font list
     """
@@ -137,3 +142,62 @@ def generate_patch_mask(config, rng, image_size):
 
     pixel_mask = np.kron(mask, np.ones(config.patch_base_size))
     return pixel_mask, mask
+
+
+def find_text_contures(np_image: np.ndarray, sensitivity=32):
+    if len(np_image.shape) == 2:
+        np_image = np.stack([np_image, np_image, np_image], axis=2)
+    if np_image.max() <= 1:
+        np_image = np_image * 255
+    np_image = np_image.astype(np.uint8)
+    gray = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
+    blur = cv2.GaussianBlur(gray, (7, 7), 0)
+    kernel = np.ones((5, 5), np.uint8)
+    grad = cv2.morphologyEx(blur, cv2.MORPH_GRADIENT, kernel)
+    _, bw = cv2.threshold(grad, 0.0, 255.0, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
+    connected = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, kernel)
+    connected = connected / 255
+    summed = np.sum(connected, axis=1)
+    try:
+        max_black_line = np.max(np.where(summed > sensitivity)[0])
+    except ValueError:
+        return np_image.shape[0] -1
+    return max_black_line
+
+
+def calculate_num_patches(np_image: np.ndarray, config: Config, noisy=False) -> int:
+    """
+    A function to calculate the number of patches in an image
+    """
+    assert type(np_image) == np.ndarray, "Image must be a numpy array"
+    if len(np_image.shape) == 4:
+        np_image = np_image[0, 0]
+    if noisy:
+        max_black_line = find_text_contures(np_image)
+    else:
+        if len(np_image.shape) == 3:
+            np_image = np_image[0]
+        max_value = np_image.max()
+        max_value = np_image.max()
+        black_lines = np.any(np_image != max_value, axis=1)
+        max_black_line = np.max(np.where(black_lines))
+    max_black_line = max_black_line // config.patch_base_size[0]
+    num_patches = (max_black_line + 1) * 23
+    return num_patches
+
+
+def simple_ocr(image: np.ndarray) -> str:
+    """
+    A function to perform OCR on an image
+    """
+    assert type(image) == np.ndarray, "Image must be a numpy array"
+    assert (
+        platform.python_version() == "3.7.16"
+    ), "Don't forget to run `conda activate Genalog`!"
+
+    ocred_image = pytesseract.image_to_data(
+        image, lang="eng", output_type=pytesseract.Output.DICT
+    )
+    ocred_image = " ".join(ocred_image["text"])
+    return ocred_image

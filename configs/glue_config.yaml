@@ -6,7 +6,7 @@ run_name:
   value: <NON_OPTIONAL>
 task_name:
   desc: glue task name. One of [cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli]
-  value: mrpc
+  value: none
 use_auth_token:
   desc: auth token for wandb
   value: <RETRACTED>
@@ -30,13 +30,13 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/pixel-intermediate
+  value: none
 hub_strategy:
   desc: when to push to hub
-  value: None
+  value: no
 hub_token:
   desc: token for huggingface
-  value: <RETRACTED>
+  value: none
 hub_private_repo:
   desc: whether the hub should be a private repo
   value: True
@@ -50,7 +50,7 @@ num_train_epochs:
   value: 500
 max_steps:
   desc: maxumim number of training steps
-  value: -1
+  value: 3000
 seed:
   desc: random_seed
   value: 7
@@ -65,16 +65,16 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 64
+  value: 128
 per_device_eval_batch_size:
   desc: evaluation batch size
-  value: 16
+  value: 8
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
-  value: 2
+  value: 1
 base_learning_rate:
   desc: base learning rate
-  value: 3e-5
+  value: 1.5e-4
 lr_scheduler_type:
   desc: type of the lr scheduler
   value: "cosine"
@@ -89,13 +89,13 @@ evaluation_strategy:
   value: "steps"
 eval_steps:
   desc: frequency of model evaluation
-  value: 50
+  value: 100
 ddp_find_unused_parameters:
   desc: not sure, something with ddp obviously
   value: False
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 43
+  value: 32
 max_train_samples:
   desc: max train sample
   value: None
@@ -121,13 +121,13 @@ logging_steps:
   value: 50
 save_stategy:
   desc: save strategy of the trainer
-  value: steps
+  value: no
 save_steps:
   desc: frequencey of saving the model
   value: 5000
 report_to:
   desc: tool to report to
-  value: []
+  value: ["wandb"]
 
 # model config
 dropout_prob:
@@ -138,7 +138,7 @@ model_config_name:
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD-v2
+  value: Nadav/PretrainedPHD-v3
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
@@ -148,14 +148,18 @@ pooling_mode:
 pooler_add_layer_norm:
   desc: whether to add a norm layer before pooling
   value: True
+adaptive_num_patches:
+  desc: Whether to adaptively mask empty patches
+  value: True
 
 # dataset config "Nadav/CaribbeanScans"
+
+noisy_dataset:
+  desc: whether to use a noisy version of the dataest or not
+  value: True
 dataset_cache_dir:
   desc: where to cache the datasets
   value: "/projects/copenlu/data/nadav/cache"
-dataset_name:
-  desc: the dataset used for intermediate training
-  value: Nadav/pixel_squad
 label_column_name: 
   desc: name of the label column
   value: "label"
@@ -170,7 +174,7 @@ randomize_font:
   value: True
 use_same_font_for_both_sentences:
   desc: whether to use the name font for both sentences
-  value: False
+  value: True
 max_margins:
   desc: maximum size of margin at the edges of the scan = [left, right, top, bottom]
   value: [15, 15, 3, 0]
@@ -200,7 +204,7 @@ min_paragraph_length:
   value: 200
 font_list_path:
   desc: path to a csv containing a list of fonts to use
-  value: pixel_datasets/fonts/antique_fonts.csv # pixel_datasets/fonts/antique_fonts.csv
+  value: pixel_datasets/fonts/clear_fonts_with_size.csv
 max_snippet_length:
   desc: number of characters to take from each text sample to generate a scan from
   value: 20000

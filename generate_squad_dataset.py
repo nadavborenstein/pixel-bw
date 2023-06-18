@@ -12,51 +12,63 @@ import matplotlib.pyplot as plt
 import os
 import sys
 
-dataset_root_path = "/projects/copenlu/data/nadav/Datasets/pixel_squad_cannon/"
-
-font_list = pd.read_csv("/home/knf792/PycharmProjects/pixel-2/pixel_datasets/fonts/antique_fonts.csv")
-index = 6
-random_font = font_list["path"][index]
-random_font = random_font.replace(" ", "_")  # fixing spaces in the path
-font_name = random_font.split(".")[0].split("/")[1]
-
-font_size = font_list["base_size"][index]
-font_size = int(font_size // 1.6)
-custom_font = CustomFont(
-    file_name=random_font, font_name=font_name.title(), font_size=font_size
-)
+dataset_root_path = "/projects/copenlu/data/nadav/Datasets/pixel_squad/"
 
 
 def main(epoch):
     wandb.init(config="configs/squad_config.yaml", mode="disabled")
-    wandb.config.update({"randomize_font": False}, allow_val_change=True)
+    wandb.config.update({"font_list_path": "pixel_datasets/fonts/antique_fonts.csv"}, allow_val_change=True)
 
-    rng = np.random.RandomState(2)
+    rng = np.random.RandomState(wandb.config["seed"])
 
-    train_transform = SimpleTorchTransform(wandb.config, rng=rng)
-    test_transform = SimpleTorchTransform(wandb.config, rng=rng)
+    train_transform = SyntheticDatasetTransform(wandb.config, rng=rng)
+    test_transform = SyntheticDatasetTransform(wandb.config, rng=rng)
 
     train_dataset = SquadDatasetForPixel(
-        config=wandb.config, transform=train_transform, rng=rng, split="train", font=custom_font
+        config=wandb.config, transform=train_transform, rng=rng, split="train"
     )
 
     test_dataset = SquadDatasetForPixel(
-        config=wandb.config, transform=test_transform, rng=rng, split="validation", font=custom_font
+        config=wandb.config, transform=test_transform, rng=rng, split="validation"
     )
-    train_dataset.set_epoch(0)
+    train_dataset.set_epoch(epoch)
     counter = 0
 
-    print("Saving train dataset")
-    for batch in tqdm(train_dataset, total=len(train_dataset.text_dataset)):
-        im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
-        mask = batch["label_mask"].numpy().astype("uint8")
-        np.save(f"{dataset_root_path}/train/labels/{epoch}-{counter}.npy", mask)
+    if not os.path.exists(f"{dataset_root_path}/train/"):
+        os.makedirs(f"{dataset_root_path}/train/images")
+        os.makedirs(f"{dataset_root_path}/train/labels")
+    if not os.path.exists(f"{dataset_root_path}/test/"):
+        os.makedirs(f"{dataset_root_path}/test/images")
+        os.makedirs(f"{dataset_root_path}/test/labels")
+        
+    if epoch == 0:
+        print("Saving test dataset")
+        for batch in tqdm(test_dataset, total=len(test_dataset.text_dataset)):
+            im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
+            mask = batch["label_mask"].numpy().astype("uint8")
+            np.save(f"{dataset_root_path}/test/labels/{counter}.npy", mask)
 
-        im = Image.fromarray(im)
-        im.save(f"{dataset_root_path}/train/images/{epoch}-{counter}.png")
+            im = Image.fromarray(im)
+            im.save(f"{dataset_root_path}/test/images/{counter}.png")
 
-        counter += 1
-    print("Done saving train dataset")
+            counter += 1
+        print("Done saving test dataset")
+    else:
+        print("Saving train dataset")
+        for batch in tqdm(train_dataset, total=len(train_dataset.text_dataset)):
+            if os.path.exists(f"{dataset_root_path}/train/images/{epoch}-{counter}.png"):
+                counter += 1
+                continue
+            else:
+                im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
+                mask = batch["label_mask"].numpy().astype("uint8")
+                np.save(f"{dataset_root_path}/train/labels/{epoch}-{counter}.npy", mask)
+
+                im = Image.fromarray(im)
+                im.save(f"{dataset_root_path}/train/images/{epoch}-{counter}.png")
+
+                counter += 1
+        print("Done saving train dataset")
 
 
 if __name__ == "__main__":

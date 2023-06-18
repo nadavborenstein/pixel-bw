@@ -7,6 +7,7 @@ from .utils.dataset_utils import (
     CustomFont,
     render_html_as_image,
     get_random_custom_font,
+    calculate_num_patches,
 )
 from .dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
 from datasets import load_dataset, concatenate_datasets
@@ -231,15 +232,17 @@ class GlueDatasetForPixel(Dataset):
         super().__init__()
         self.task = task
         if task == "mnli" and split == "validation":
-            text_datast = load_dataset("glue", task, cache_dir=config.dataset_cache_dir)
-            self.text_dataset = concatenate_datasets(
+            base_dataset = load_dataset(
+                "glue", task, cache_dir=config.dataset_cache_dir
+            )
+            self.base_dataset = concatenate_datasets(
                 [
-                    text_datast["validation_matched"],
-                    text_datast["validation_mismatched"],
+                    base_dataset["validation_matched"],
+                    base_dataset["validation_mismatched"],
                 ]
             )
         else:
-            self.text_dataset = load_dataset(
+            self.base_dataset = load_dataset(
                 "glue", task, split=split, cache_dir=config.dataset_cache_dir
             ).shuffle(seed=config.seed)
         self.config = config
@@ -249,7 +252,7 @@ class GlueDatasetForPixel(Dataset):
         self.attention_mask = self.image_generator.get_attention_mask(
             config.num_patches
         )
-        self.randomize_font = split == "train" and config.randomize_font
+        self.randomize_font = config.randomize_font
         self.base_fonts = [
             CustomFont(
                 file_name="fonts/PackardAntique-Bold.ttf",
@@ -259,7 +262,7 @@ class GlueDatasetForPixel(Dataset):
         ] * 2
 
     def __len__(self) -> int:
-        return len(self.text_dataset)
+        return len(self.base_dataset)
 
     def _generate_scan_fron_sample(self, instance: Dict):
         """
@@ -271,7 +274,6 @@ class GlueDatasetForPixel(Dataset):
             if TASK_TO_KEYS[self.task][1]
             else ""
         )
-
         scan = self.image_generator.generate(
             sentence_1,
             sentence_2,
@@ -280,10 +282,14 @@ class GlueDatasetForPixel(Dataset):
         return scan
 
     def __getitem__(self, index: int) -> Dict:
-        sample = self.text_dataset[index]
+        sample = self.base_dataset[index]
 
         scan, _ = self._generate_scan_fron_sample(sample)
-
+        num_patches = (
+            calculate_num_patches(scan, config=self.config, noisy=True)
+            if self.config.adaptive_num_patches
+            else self.config.num_patches
+        )
         if self.transform:
             scan = self.transform(scan)
 
@@ -291,9 +297,59 @@ class GlueDatasetForPixel(Dataset):
 
         inputs = {
             "pixel_values": scan,
-            "num_patches": self.config.num_patches,
+            "num_patches": num_patches,
             "attention_mask": self.attention_mask,
             "label": sample["label"],
+        }
+        return inputs
+
+
+class GlueDatasetFromHub(Dataset):
+    def __init__(self, config: Config, base_dataest) -> None:
+        super().__init__()
+        self.base_dataset = base_dataest
+        self.config = config
+        self.num_patches = config.num_patches
+
+    def get_attention_mask(self, num_text_patches: int):
+        """
+        Creates an attention mask of size [1, seq_length]
+        The mask is 1 where there is text or a [SEP] black patch and 0 everywhere else
+        """
+        n = min(
+            num_text_patches + 1, self.config.max_seq_length
+        )  # Add 1 for [SEP] token (black patch)
+        zeros = torch.zeros(self.config.max_seq_length)
+        ones = torch.ones(n)
+        zeros[:n] = ones
+        return zeros
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, index) -> Dict:
+        image = self.base_dataset[index]["image"]
+        image = image.copy().convert("RGB")
+        image = np.array(image).astype(np.float32)
+
+        num_patches = (
+            calculate_num_patches(image, config=self.config, noisy=True)
+            if self.config.adaptive_num_patches
+            else self.num_patches
+        )
+        attention_mask = self.get_attention_mask(num_patches)
+
+        image = image / 255.0
+        image = np.transpose(image, (2, 0, 1))
+        image = torch.tensor(image)
+
+        label = self.base_dataset[index]["label"]
+
+        inputs = {
+            "pixel_values": image,
+            "attention_mask": attention_mask,
+            "label": label,
+            "num_patches": num_patches,
         }
         return inputs
 

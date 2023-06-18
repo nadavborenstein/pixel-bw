@@ -27,7 +27,7 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/PretrainedPHD-v2
+  value: Nadav/PretrainedPHD-v3
 hub_strategy:
   desc: when to push to hub
   value: checkpoint
@@ -50,7 +50,7 @@ squad_version:
   value: 1
 seed:
   desc: random_seed
-  value: 80000
+  value: 43
 fp16:
   desc: whether to train with half persicion
   value: True
@@ -86,18 +86,18 @@ eval_steps:
   value: 5000
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 43
+  value: 32
 
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v2"
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v3"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: False
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v2"
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v3"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
@@ -109,10 +109,10 @@ save_stategy:
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 10000
+  value: 5000
 report_to:
   desc: tool to report to
-  value: []
+  value: ["wandb"]
 model_cache_dir:
   desc: model cache dir
   value: none
@@ -156,7 +156,7 @@ train_dataset_configs:
   value: ["20220301.en", "plain_text"]
 num_test_steps:
   desc: number of images in test dataset
-  value: 1000
+  value: 200
 label_column_name: 
   desc: name of the label column
   value: "label"
@@ -200,7 +200,7 @@ min_paragraph_length:
   value: 200
 font_list_path:
   desc: path to a csv containing a list of fonts to use
-  value: pixel_datasets/fonts/antique_fonts.csv
+  value: pixel_datasets/fonts/clear_fonts_with_size.csv
 max_snippet_length:
   desc: number of characters to take from each text sample to generate a scan from
   value: 20000
@@ -227,10 +227,10 @@ num_patches:
   value: 529
 random_font_probability:
   desc: probability to replace font mid scan
-  value: 0.5
+  value: 0.8
 random_snippet_probability:
   desc: whether to use a random snippet in concatenation, or the next one
-  value: 0.5
+  value: 0.8
 embed_real_image:
   desc: Whether to embed real images in white background
   value: False

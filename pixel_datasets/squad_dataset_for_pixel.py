@@ -1,5 +1,5 @@
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from torch.utils.data import IterableDataset, get_worker_info
+from torch.utils.data import IterableDataset, get_worker_info, Dataset
 from typing import Callable, List, Tuple, Dict
 from wandb.sdk.wandb_config import Config
 from .utils.utils import crop_image, plot_arrays
@@ -7,6 +7,7 @@ from .utils.dataset_utils import (
     CustomFont,
     render_html_as_image,
     get_random_custom_font,
+    calculate_num_patches,
 )
 from .dataset_transformations import SyntheticDatasetTransform, SimpleTorchTransform
 from .utils.squad_utils import (
@@ -288,7 +289,6 @@ class SquadDatasetForPixel(IterableDataset):
         )
         self.randomize_font = split == "train"
         self.test_font = font
-        
 
     def set_epoch(self, epoch):
         """
@@ -351,6 +351,57 @@ class SquadDatasetForPixel(IterableDataset):
                 "attention_mask": self.attention_mask,
             }
             yield inputs
+
+
+class SquadDatasetFromDisk(Dataset):
+    def __init__(self, config: Config, base_dataest) -> None:
+        super().__init__()
+        self.base_dataset = base_dataest
+        self.config = config
+        self.num_patches = config.num_patches
+
+    def get_attention_mask(self, num_text_patches: int):
+        """
+        Creates an attention mask of size [1, seq_length]
+        The mask is 1 where there is text or a [SEP] black patch and 0 everywhere else
+        """
+        n = min(
+            num_text_patches + 1, self.config.max_seq_length
+        )  # Add 1 for [SEP] token (black patch)
+        zeros = torch.zeros(self.config.max_seq_length)
+        ones = torch.ones(n)
+        zeros[:n] = ones
+        return zeros
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, index) -> Dict:
+        image = self.base_dataset[index]["image"]
+        image = image.copy().convert("RGB")
+        image = np.array(image).astype(np.float32)
+
+        num_patches = (
+            calculate_num_patches(image, config=self.config)
+            if self.config.adaptive_num_patches
+            else self.num_patches
+        )
+        attention_mask = self.get_attention_mask(num_patches)
+
+        image = image / 255.0
+        image = np.transpose(image, (2, 0, 1))
+        image = torch.tensor(image)
+
+        label = self.base_dataset[index]["label"]
+        label = torch.tensor(label).flatten()
+
+        inputs = {
+            "pixel_values": image,
+            "attention_mask": attention_mask,
+            "label": label,
+            "num_patches": num_patches,
+        }
+        return inputs
 
 
 def main():

@@ -27,7 +27,7 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/Pixel-real-scans-v2-all-fonts
+  value: Nadav/Pixel-real-scans-v3
 hub_strategy:
   desc: when to push to hub
   value: checkpoint
@@ -89,18 +89,18 @@ eval_steps:
   value: 5000
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 43
+  value: 32
 
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v2_all_fonts"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v3"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: False
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v2_all_fonts"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v3"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
@@ -126,7 +126,7 @@ model_config_name:
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD-v2-all-fonts
+  value: Nadav/PretrainedPHD-v3
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True

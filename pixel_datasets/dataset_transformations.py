@@ -5,6 +5,7 @@ from albumentations.pytorch import ToTensorV2
 from sklearn.datasets import make_blobs
 from wandb.sdk.wandb_config import Config
 import cv2
+from scipy.ndimage import binary_erosion
 
 
 def overlay_weighted(src, background, alpha, beta, gamma=0):

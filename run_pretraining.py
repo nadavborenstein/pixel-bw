@@ -20,12 +20,6 @@ from dataclasses import asdict
 
 import wandb
 
-from configs.all_configs import (
-    RenderingArguments,
-    ModelArguments,
-    CustomTrainingArguments,
-    DataTrainingArguments,
-)
 from typing import Any, Dict
 import numpy as np
 import datasets
@@ -41,17 +35,14 @@ from pixel_datasets.dataset_transformations import (
 
 from pixel import (
     PIXELConfig,
-    PIXELEmbeddings,
     PIXELForPreTraining,
     PIXELTrainerForPretraining,
-    get_2d_sincos_pos_embed,
-    process_remaining_strings,
-    get_config_dict,
 )
-from transformers import (
-    HfArgumentParser,
-    ViTFeatureExtractor,
-)
+from transformers.trainer_utils import get_last_checkpoint
+from transformers.utils import check_min_version
+from transformers.utils.versions import require_version
+
+from pixel.scripts.training.callbacks import VisualizationCallback
 from wandb.sdk.wandb_config import Config
 from configs.utils import (
     read_args,
@@ -62,19 +53,12 @@ from configs.utils import (
     generate_training_args_from_config,
 )
 
-from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version
-from transformers.utils.versions import require_version
-
-from pixel.scripts.training.callbacks import VisualizationCallback
-
 """ Pre-training a PIXEL model as an MAE (masked autoencoder)"""
 
 logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.17.0")
-
 require_version("datasets>=1.8.0", "To fix: pip install ./datasets")
 
 
@@ -136,8 +120,7 @@ def get_datasets(args: Config):
 
 
 def main(args: Config):
-    # wandb.init(project="pixel",config=config_dict, name=config_dict["run_name"])
-
+    # Setup logging
     log_level = logging.INFO
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -157,7 +140,7 @@ def main(args: Config):
         + f"distributed training: {bool(args.local_rank != -1)}, 16-bits training: {args.fp16}"
     )
 
-    logger.info(f"Training/evaluation parameters {args}")
+    logger.info(f"Configuration: {args}")
 
     # Detecting last checkpoint.
     last_checkpoint = None
@@ -237,6 +220,7 @@ def main(args: Config):
 
     # Create model
     if args.model_name_or_path:
+        logger.info(f"Training from pretrained model {args.model_name_or_path}")
         model = PIXELForPreTraining.from_pretrained(
             args.model_name_or_path,
             from_tf=bool(".ckpt" in args.model_name_or_path),
@@ -261,8 +245,6 @@ def main(args: Config):
     decoder_params = sum([p.numel() for p in model.decoder.parameters()])
     logger.info(f"Decoder parameters count: {decoder_params}")
 
-    # Get patch mask generator if span masking
-
     # calulates the real batch size and learning rate
     total_train_batch_size = (
         args.per_device_train_batch_size * args.gradient_accumulation_steps * args.n_gpu
@@ -275,9 +257,7 @@ def main(args: Config):
         )
 
         # Initialize our trainer
-        logger.info(
-            f"LEN OF EVAL DATASET: {args.num_test_steps * max(1, args.n_gpu)}"
-        )
+        logger.info(f"LEN OF EVAL DATASET: {args.num_test_steps * max(1, args.n_gpu)}")
 
     trainer = PIXELTrainerForPretraining(
         model=model,
@@ -298,6 +278,7 @@ def main(args: Config):
             checkpoint = args.resume_from_checkpoint
         elif last_checkpoint is not None:
             checkpoint = last_checkpoint
+            logger.info(f"Resuming from Checkpoint: {checkpoint}")
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()
         # Also save feature extractor together with model and text renderer

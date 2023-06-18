@@ -21,19 +21,19 @@ model_revision:
   value: main
 push_to_hub:
   desc: whether to push the model to the hub after training
-  value: True
+  value: False
 streaming:
   desc: whether to load all the datasets or to stream them
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/pixel-intermediate
+  value: none
 hub_strategy:
   desc: when to push to hub
-  value: checkpoint
+  value: no
 hub_token:
   desc: token for huggingface
-  value: <RETRACTED>
+  value: none
 hub_private_repo:
   desc: whether the hub should be a private repo
   value: True
@@ -47,7 +47,7 @@ epochs:
   value: 1
 max_steps:
   desc: maxumim number of training steps
-  value: 1000000
+  value: 5000
 squad_version:
   desc: squad dataset version (1 or 2)
   value: 1
@@ -65,13 +65,13 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 42
+  value: 26
 per_device_eval_batch_size:
   desc: evaluation batch size
   value: 16
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
-  value: 2
+  value: 1
 base_learning_rate:
   desc: base learning rate
   value: 1.5e-4
@@ -81,6 +81,9 @@ lr_scheduler_type:
 warmup_ratio:
   desc: ratio used for warmup
   value: 0
+warmup_steps:
+  desc: ratio used for warmup
+  value: 100
 evaluation_strategy:
   desc: when to evaluate the model, in steps
   value: "steps"
@@ -92,7 +95,7 @@ ddp_find_unused_parameters:
   value: False
 dataloader_num_workers:
   desc: number of dataset workers
-  value: 8
+  value: 16
 task_name:
   desc: name of the task, for model card
   value: "squad"
@@ -101,25 +104,25 @@ task_name:
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/squad_cannon"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: True
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_outputs"
+  value: "/projects/copenlu/data/nadav/pixel/squad_cannon"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
 logging_steps:
   desddc: logging frequency, in steps
-  value: 500
+  value: 50
 save_stategy:
   desc: save strategy of the trainer
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 5000
+  value: 10000
 report_to:
   desc: tool to report to
   value: ["wandb"]
@@ -133,11 +136,16 @@ model_config_name:
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD
+  value: Nadav/PretrainedPHD-v3
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
-
+num_labels:
+  desc: number of labels
+  value: 2
+adaptive_num_patches:
+  desc: whether to adaptively change the number of patches in the attention mask
+  value: True
 
 # dataset config "Nadav/CaribbeanScans"
 dataset_cache_dir:
@@ -145,7 +153,7 @@ dataset_cache_dir:
   value: "/projects/copenlu/data/nadav/cache"
 dataset_name:
   desc: the dataset used for intermediate training
-  value: Nadav/pixel_squad
+  value: /projects/copenlu/data/nadav/Datasets/pixel_squad_cannon/dataset
 label_column_name: 
   desc: name of the label column
   value: "label"
@@ -232,7 +240,7 @@ embed_real_image:
   value: False
 label_names:
   desc: Not sure...
-  value: ["pixel_values"]
+  value: ["labels"]
 remove_unused_columns:
   desc: not sure...
   value: False

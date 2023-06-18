@@ -24,7 +24,8 @@ import datasets
 import numpy as np
 import torch
 import transformers
-from datasets import load_dataset, load_metric, concatenate_datasets
+from datasets import load_dataset, load_metric, load_from_disk
+from datasets.builder import DatasetGenerationError
 from transformers import (
     EvalPrediction,
     set_seed,
@@ -49,6 +50,10 @@ from configs.utils import (
     update_config_key,
     generate_training_args_from_config,
 )
+from pixel_datasets.squad_dataset_for_pixel import SquadDatasetFromDisk
+from pixel.scripts.training.callbacks import SquadVisualizationCallback
+
+from PIL import Image
 
 check_min_version("4.17.0")
 
@@ -60,13 +65,13 @@ logger = logging.getLogger(__name__)
 
 def get_model_and_config(args: Config, num_labels: int = 2):
     config_kwargs = {
-        "cache_dir": args.cache_dir,
+        "cache_dir": args.model_cache_dir,
         "revision": args.model_revision,
         "use_auth_token": args.use_auth_token if args.use_auth_token else None,
     }
 
     config = AutoConfig.from_pretrained(
-        args.config_name if args.config_name else args.model_name_or_path,
+        args.model_config_name if args.model_config_name else args.model_name_or_path,
         num_labels=num_labels,
         finetuning_task=args.task_name,
         attention_probs_dropout_prob=args.dropout_prob,
@@ -76,28 +81,28 @@ def get_model_and_config(args: Config, num_labels: int = 2):
 
     logger.info(f"Using dropout with probability {args.dropout_prob}")
 
-
     model = PIXELForTokenClassification.from_pretrained(
-            args.model_name_or_path,
-            config=config,
-            **config_kwargs,
-        )
+        args.model_name_or_path,
+        config=config,
+        **config_kwargs,
+    )
 
     return model, config
 
 
-def get_collator(
-        is_regression: bool = False
-):
+def get_collator(is_regression: bool = False):
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"] for example in examples])
-        attention_mask = torch.stack([example["attention_mask"] for example in examples])
+        attention_mask = torch.stack(
+            [example["attention_mask"] for example in examples]
+        )
         if "label" in examples[0]:
-            if is_regression:
-                labels = torch.FloatTensor([example["label"] for example in examples])
-            else:
-                labels = torch.LongTensor([example["label"] for example in examples])
-            return {"pixel_values": pixel_values, "attention_mask": attention_mask, "labels": labels}
+            labels = torch.stack([example["label"] for example in examples])
+            return {
+                "pixel_values": pixel_values,
+                "attention_mask": attention_mask,
+                "labels": labels,
+            }
         return {"pixel_values": pixel_values, "attention_mask": attention_mask}
 
     return collate_fn
@@ -105,15 +110,19 @@ def get_collator(
 
 def get_datasets(args: Config, seed: int):
     # Load data features from cache or dataset file
-    dataset = load_dataset(args.dataset_name, cache_dir=args.dataset_cache_dir)
-    train_dataset = dataset["train"]
-    test_dataset = dataset["test"]
+    try:
+        dataset = load_dataset(args.dataset_name, cache_dir=args.dataset_cache_dir)
+        train_dataset = dataset["train"]
+        test_dataset = dataset["test"]
+    except DatasetGenerationError:
+        dataset = load_from_disk(args.dataset_name)
+        train_dataset = SquadDatasetFromDisk(base_dataest=dataset["train"], config=args)
+        test_dataset = SquadDatasetFromDisk(base_dataest=dataset["test"], config=args)
+
     return train_dataset, test_dataset
 
 
 def main(args: Config):
-
-
     # Setup logging
     log_level = logging.INFO
     logging.basicConfig(
@@ -137,7 +146,11 @@ def main(args: Config):
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if os.path.isdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
+    if (
+        os.path.isdir(args.output_dir)
+        and args.do_train
+        and not args.overwrite_output_dir
+    ):
         last_checkpoint = get_last_checkpoint(args.output_dir)
         if last_checkpoint is None and len(os.listdir(args.output_dir)) > 0:
             raise ValueError(
@@ -153,7 +166,7 @@ def main(args: Config):
     # Set seed before initializing model.
     set_seed(args.seed)
 
-    train_dataset, eval_dataset, raw_datasets = get_datasets(args, args.seed)
+    train_dataset, eval_dataset = get_datasets(args, args.seed)
     # Load pretrained model and config
     # See more about loading any type of standard or custom dataset at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -161,7 +174,7 @@ def main(args: Config):
     # Labels
 
     num_labels = args.num_labels if args.num_labels is not None else 2
-    
+
     # Load pretrained model and config
     model, config = get_model_and_config(args, num_labels=num_labels)
 
@@ -171,13 +184,45 @@ def main(args: Config):
     model.config.label2id = {l: i for i, l in enumerate(label_list)}
     model.config.id2label = {id: label for label, id in config.label2id.items()}
 
-
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
+        def compute_single_acc(pred, label):
+            summed = label + pred
+            if max(summed) == 0:
+                return 1.0
+            else:
+                num_missmatched = np.sum(summed == 1)
+                num_matched = np.sum(summed == 2) / 2
+                return num_matched / (num_missmatched + num_matched)
+
+        def compute_has_match(pred, label):
+            summed = label + pred
+            return 1 if np.max(summed) == 2 else 0
+
+        def false_negative(pred, label):
+            return 1 if np.max(label) == 1 and np.max(pred) == 0 else 0
+
+        def false_positive(pred, label):
+            return 1 if np.max(pred) == 1 and np.max(label) == 0 else 0
+
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        preds = np.argmax(preds, axis=1)
-        return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
+        preds = np.argmax(preds, axis=2)
+        labels = p.label_ids
+
+        accuracies = [compute_single_acc(p, l) for p, l in zip(preds, labels)]
+        has_answer = np.mean(np.max(preds, axis=1))
+        has_match = [compute_has_match(p, l) for p, l in zip(preds, labels)]
+        false_negatives = [false_negative(p, l) for p, l in zip(preds, labels)]
+        false_positives = [false_positive(p, l) for p, l in zip(preds, labels)]
+        return {
+            "accuracy": np.mean(accuracies),
+            "has_match": np.sum(has_match),
+            "has_answer": has_answer,
+            "false_negatives": np.sum(false_negatives),
+            "false_positives": np.sum(false_positives),
+            "num_samples": len(accuracies),
+        }
 
     # Initialize our Trainer
     trainer = PIXELTrainer(
@@ -188,6 +233,10 @@ def main(args: Config):
         compute_metrics=compute_metrics,
         data_collator=get_collator(),
     )
+
+    if args.do_eval and "wandb" in args.report_to:
+        logger.info(f"adding visualization callback")
+        trainer.add_callback(SquadVisualizationCallback(visualize_train=False))
 
     # Training
     if args.do_train:
@@ -205,30 +254,29 @@ def main(args: Config):
         trainer.save_metrics("train", metrics)
         trainer.save_state()
 
-    # Evaluation
-    if args.do_eval:
-        logger.info("*** Evaluate ***")
+    # # Evaluation
+    # if args.do_eval:
+    #     logger.info("*** Evaluate ***")
 
-        # Loop to handle MNLI double evaluation (matched, mis-matched)
+    #     # Loop to handle MNLI double evaluation (matched, mis-matched)
 
-        outputs = trainer.evaluate(eval_dataset=eval_dataset)
-        logger.info("***** Eval results *****")
-        for key, value in outputs.items():
-            logger.info(f"  {key} = {value}")
-        trainer.log_metrics("eval", outputs)
+    #     outputs = trainer.evaluate(eval_dataset=eval_dataset)
+    #     logger.info("***** Eval results *****")
+    #     for key, value in outputs.items():
+    #         logger.info(f"  {key} = {value}")
+    #     trainer.log_metrics("eval", outputs)
 
+    # kwargs = {"finetuned_from": args.model_name_or_path, "tasks": "question-answering"}
+    # if args.task_name is not None:
+    #     kwargs["language"] = "en"
+    #     kwargs["dataset_tags"] = "pixel-squad"
+    #     kwargs["dataset_args"] = args.task_name
+    #     kwargs["dataset"] = args.dataset_name
 
-    kwargs = {"finetuned_from": args.model_name_or_path, "tasks": "question-answering"}
-    if args.task_name is not None:
-        kwargs["language"] = "en"
-        kwargs["dataset_tags"] = "pixel-squad"
-        kwargs["dataset_args"] = args.task_name
-        kwargs["dataset"] = args.dataset_name
-
-    if args.push_to_hub:
-        trainer.push_to_hub(**kwargs)
-    else:
-        trainer.create_model_card(**kwargs)
+    # if args.push_to_hub:
+    #     trainer.push_to_hub(**kwargs)
+    # else:
+    #     trainer.create_model_card(**kwargs)
 
 
 if __name__ == "__main__":
@@ -240,7 +288,7 @@ if __name__ == "__main__":
         name=command_line_args["run_name"],
         save_code=True,
     )
-    assert evaluate_config_before_update(wandb.config)
+    # assert evaluate_config_before_update(wandb.config)
     update_config(wandb.config, command_line_args)
     assert evaluate_config_after_update(wandb.config)
 

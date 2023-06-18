@@ -2,7 +2,7 @@ from .dataset_transformations import SyntheticDatasetTransform
 from cairocffi import FORMAT_ARGB32
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image, ImageDraw as D
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, interleave_datasets
 from albumentations.pytorch import ToTensorV2
 from typing import List, Tuple, Dict, Callable, Optional
 from wandb.sdk.wandb_config import Config
@@ -135,7 +135,7 @@ class ImageGenerator(object):
         )
         return img_array
 
-    def generate(self, text, font: CustomFont = None):
+    def generate(self, text, font: CustomFont = None, margins: List = None):
         """
         Generate an image from the given text and font
         :param text: The text to be rendered
@@ -143,7 +143,8 @@ class ImageGenerator(object):
         """
         if font is None:
             font = get_random_custom_font(self.font_list, self.rng)
-        margins = self._get_random_margins()
+        if margins is None:
+            margins = self._get_random_margins()
         html_text = self.update_template(font, text, margins)
         img_array = render_html_as_image(
             html_text, self.config.image_resolution, channel=self.config.channel
@@ -263,7 +264,7 @@ class PretrainingDataset(IterableDataset):
         )
         return (
             paragraph[random_loc : self.config.max_snippet_length],
-            paragraphs[paragraph_index:],
+            paragraphs[paragraph_index + 1 :],
         )
 
     def _should_stop(self):
@@ -274,6 +275,36 @@ class PretrainingDataset(IterableDataset):
 
     def _update_steps(self):
         self.steps_taken += 1
+
+    def generate_inference_image(
+        self,
+        text: str,
+        font: CustomFont = None,
+        split_text: bool = True,
+        clean_text: bool = True,
+    ):
+        """
+        A method that generates an image from a random snippet
+        """
+        margins = [1, 1, 1, 1]
+        if split_text:
+            if clean_text:
+                paragraphs = self._clean_paragraphs(text.split("\n"))
+            else:
+                paragraphs = text.split("\n")
+        else:
+            paragraphs = [text]
+        image, font = self.image_generator.generate(paragraphs.pop(0), font, margins)
+        while (
+            self.image_generator.check_if_can_concatenate(image) and len(paragraphs) > 0
+        ):
+            snippet = paragraphs.pop(0)
+            image_2, font = self.image_generator.generate(snippet, font, margins)
+            image = self.image_generator.concatenate_images(image, image_2)
+
+        assert image.shape[0] == self.config.image_height
+        assert image.shape[1] == self.config.image_width
+        return image
 
     def generate_image(self):
         """
@@ -325,31 +356,3 @@ class PretrainingDataset(IterableDataset):
             self._update_steps()
             yield inputs
 
-
-def main():
-    wandb.init(config="configs/pretraining_config.yaml", mode="disabled")
-    rng = np.random.RandomState(2)
-    text_dataset = load_dataset("wikipedia", "20220301.simple")
-
-    transform = SyntheticDatasetTransform(wandb.config, rng=rng)
-    train_dataset = PretrainingDataset(
-        wandb.config, text_dataset["train"], transform, rng=rng
-    )
-    figures = []
-    for i in range(3):
-        train_dataset.set_epoch(i)
-        counter = 0
-        for batch in train_dataset:
-            if counter == 3:
-                break
-            im = batch["pixel_values"].numpy().astype("uint8").transpose(1, 2, 0)
-            figures.append(im)
-            counter += 1
-
-    im = plot_arrays(figures)
-    im.save("results/sample.png")
-
-
-if __name__ == "__main__":
-    main()
-    # print(timeit.timeit(main, number=10))
