@@ -319,12 +319,14 @@ def select_random_word_from_scan(data_dict):
     valid_words = [
         i for i, word in enumerate(data_dict["text"]) if len(word.strip()) > 3
     ]
+    if len(valid_words) == 0:
+        return None
     random_word_loc = np.random.choice(valid_words)
     return data_dict["text"][random_word_loc]
 
 
 def mask_single_word_from_scan(im, word: str = None):
-    pixel_mask = np.zeros(im.size[:2])
+    pixel_mask = np.zeros(im.shape[:2])
     while pixel_mask.sum() == 0:
         if type(im) == np.ndarray:
             if im.max() == 1 and im.min() == 0:
@@ -334,6 +336,8 @@ def mask_single_word_from_scan(im, word: str = None):
         data_dict = pytesseract.image_to_data(im, output_type=pytesseract.Output.DICT)
         if word is None:
             word = select_random_word_from_scan(data_dict)
+        if word is None:
+            raise ValueError("No word found in scan")
         match, all_text_offest_map = locate_word_within_scan(data_dict, word)
         all_rectangles = generate_rectangle_for_matched_answer(
             match, word, data_dict, all_text_offest_map

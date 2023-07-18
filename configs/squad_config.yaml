@@ -104,13 +104,13 @@ task_name:
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/squad_cannon"
+  value: "/projects/copenlu/data/nadav/pixel/pixel_squad"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: True
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/squad_cannon"
+  value: "/projects/copenlu/data/nadav/pixel/pixel_squad"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
@@ -122,7 +122,7 @@ save_stategy:
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 10000
+  value: 5000
 report_to:
   desc: tool to report to
   value: ["wandb"]
@@ -153,20 +153,31 @@ dataset_cache_dir:
   value: "/projects/copenlu/data/nadav/cache"
 dataset_name:
   desc: the dataset used for intermediate training
-  value: /projects/copenlu/data/nadav/Datasets/pixel_squad_cannon/dataset
+  value: /projects/copenlu/data/nadav/Datasets/pixel_squad/dataset
 label_column_name: 
   desc: name of the label column
   value: "label"
 number_of_labels:
   desc: number of possible labels
   value: 2
-
+randomize_font:
+  desc: whether to use a random font or just Ariel
+  value: True
+mix_historical_runaways:
+  desc: whether to concatenate and test on the historical dataset
+  value: False
+historical_dataset_name:
+  desc: path of the historical dataset
+  value: /projects/copenlu/data/nadav/Datasets/runaways_visual/dataset
 max_l_dist_factor:
   desc: length factor for fuzzy string matching
   value: 0.4
 mask_patching_tolerance:
   desc: tolerance of converting a pixel mask to patch mask (when a patch will be white)
   value: 0.3
+balance_dataset:
+  desc: whether or not to duplicate the minority class to balance the dataset
+  value: True
 
 # image generation settings
 html_template:

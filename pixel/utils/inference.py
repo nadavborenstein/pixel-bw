@@ -2,11 +2,15 @@ from ..models.pixel.modeling_pixel import (
     PIXELForPreTraining,
     PIXELConfig,
     PIXELForSequenceClassification,
+    PIXELForTokenClassification
 )
 import numpy as np
 import torch
 from PIL import Image
 from pixel_datasets.utils.dataset_utils import CustomFont
+from scipy import stats as st
+from skimage import data, color, transform
+import cv2
 
 
 def load_model_for_pretraining(args, model_name):
@@ -31,6 +35,36 @@ def load_model_for_pretraining(args, model_name):
         }
     )
     model = PIXELForPreTraining.from_pretrained(
+        model_name,
+        from_tf=bool(".ckpt" in args.model_name_or_path),
+        config=config,
+        **config_kwargs,
+    )
+    return model
+
+
+def load_model_for_squad(args, model_name):
+    config_kwargs = {
+        "cache_dir": args.model_cache_dir,
+        "revision": args.model_revision,
+        "use_auth_token": args.use_auth_token,
+    }
+    config = PIXELConfig.from_pretrained(
+        model_name,
+        attention_probs_dropout_prob=args.dropout_prob,
+        hidden_dropout_prob=args.dropout_prob,
+        **config_kwargs,
+    )
+
+    # Adapt config
+    config.update(
+        {
+            "mask_ratio": args.mask_ratio,
+            "norm_pix_loss": args.norm_pix_loss,
+            "architectures": [PIXELForTokenClassification.__name__],
+        }
+    )
+    model = PIXELForTokenClassification.from_pretrained(
         model_name,
         from_tf=bool(".ckpt" in args.model_name_or_path),
         config=config,
@@ -70,6 +104,9 @@ def load_general_model(args, model_name, model_type: PIXELForPreTraining):
 
 
 def predict(model, image, mask):
+    if type(image) == Image.Image:
+        image = np.array(image)
+
     if type(image) == np.ndarray:
         image = np.expand_dims(image, axis=0).astype(np.float32)
         if image.max() > 1:
@@ -94,10 +131,78 @@ def predict(model, image, mask):
     attention_mask = get_attention_mask(529)
     attention_mask = attention_mask.unsqueeze(0)
 
-
     model.eval()
     outputs = model(pixel_values=image, attention_mask=attention_mask, patch_mask=mask)
     return outputs
+
+
+def predict_squad(model, image):
+    if type(image) == Image.Image:
+        image = np.array(image)
+
+    if type(image) == np.ndarray:
+        image = np.expand_dims(image, axis=0).astype(np.float32)
+        if image.max() > 1:
+            image = image / 255.0
+        image = np.transpose(image, (0, 3, 1, 2))
+        image = torch.from_numpy(image)
+
+    elif type(image) == torch.Tensor:
+        if image.max() > 1:
+            image = image / 255.0
+        image = image.unsqueeze(0)
+
+    attention_mask = get_attention_mask(529)
+    attention_mask = attention_mask.unsqueeze(0)
+
+    model.eval()
+    outputs = model(pixel_values=image, attention_mask=attention_mask)
+    return outputs
+
+
+def parse_squad_outputs(outputs, original_image, labels, method):
+    mask = outputs["logits"][0].detach().cpu().numpy()
+    mask = np.argmax(mask, axis=1)
+    mask = mask.reshape(23, 23)
+    mask = np.kron(mask, np.ones((16, 16)))
+    mask = np.stack([mask, mask, mask], axis=2)
+
+    real_mask = labels.reshape(23, 23)
+    real_mask = np.kron(real_mask, np.ones((16, 16)))
+    real_mask = np.stack([real_mask, real_mask, real_mask], axis=2)
+
+    if method == "masked_predictions_only":
+        masked_prediction = original_image * (1 - mask) + original_image * mask * 0.6
+        masked_prediction = np.clip(masked_prediction, 0, 255)
+        return masked_prediction
+    if method == "masked_real_only":
+        masked_real = (
+            original_image * (1 - real_mask) + original_image * real_mask * 0.6
+        )
+        masked_real = np.clip(masked_real, 0, 255)
+        return masked_real
+    if method == "masked_merged":
+        masked = color.label2rgb(
+            mask, original_image.astype("uint8"), bg_label=0, bg_color=None
+        )
+        masked = (masked * 255).astype(np.uint8)
+        masked = color.label2rgb(
+            real_mask, masked.astype, bg_label=0, bg_color=None, colors=[(0, 0, 1)]
+        )
+        masked = (masked * 255).astype(np.uint8)
+        return masked
+    if method == "saliency":
+        mask = outputs["logits"][0].detach().cpu().numpy()
+        mask = mask[:, 1] - mask[:, 0]
+        mask = 1 / (1 + np.exp(-mask))
+        mask = mask.reshape(23, 23)
+        # mask = np.kron(mask, np.ones((16, 16)))
+        mask = transform.resize(mask, (original_image.shape[0], original_image.shape[1]))
+        heatmap = cv2.applyColorMap((mask * 255).astype("uint8"), cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        merged = cv2.addWeighted(original_image.astype("uint8"), 0.5, heatmap, 0.5, 0)
+        
+        return merged
 
 
 def calculate_num_patches(image):
@@ -154,6 +259,14 @@ def parse_outputs(outputs, model, original_img):
     mask = mask.unsqueeze(-1).repeat(1, 1, 16**2 * 3)
     mask = model.unpatchify(mask).squeeze()  # 1 is removing, 0 is keeping
 
+    if type(original_img) == np.ndarray:
+        original_img = torch.from_numpy(original_img.transpose(2, 0, 1))
+
+    if original_img.max() <= 1:
+        original_img = original_img * 255
+
+    original_img_most_common = int(st.mode(original_img.numpy().flatten()).mode)
+
     attention_mask = outputs["attention_mask"].unsqueeze(-1).repeat(1, 1, 16**2 * 3)
     attention_mask = model.unpatchify(attention_mask).squeeze()
     predictions = model.unpatchify(outputs["logits"]).detach().cpu().squeeze()
@@ -162,17 +275,13 @@ def parse_outputs(outputs, model, original_img):
     )
     predictions = torch.sigmoid(predictions)
     predictions = predictions.clamp(-1, 0.5)
+    predictions = predictions[0]
+    predictions = torch.stack([predictions, predictions, predictions], dim=0)
     predictions = predictions - predictions.min()
     predictions = predictions / predictions.max()
-    predictions = predictions * 255
+    predictions = predictions * original_img_most_common
     # predictions = predictions - 0
-    predictions = predictions.clamp(0, 255)
-
-    if type(original_img) == np.ndarray:
-        original_img = torch.from_numpy(original_img.transpose(2, 0, 1))
-
-    if original_img.max() <= 1:
-        original_img = original_img * 255
+    predictions = predictions.clamp(0, original_img_most_common)
 
     reconstruction = (
         original_img * (1 - (torch.bitwise_and(mask == 1, attention_mask == 1)).long())

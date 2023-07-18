@@ -108,6 +108,28 @@ def get_collator(is_regression: bool = False):
     return collate_fn
 
 
+def balance_dataset(dataset, oversample=True):
+    """
+    Balance the dataset by duplicating the minority class
+    """
+    dataset_1 = dataset.filter(lambda example: np.max(example["label"]) == 1)
+    dataset_0 = dataset.filter(lambda example: np.max(example["label"]) == 0)
+    max_len = max(len(dataset_1), len(dataset_0))
+    min_len = min(len(dataset_1), len(dataset_0))
+    
+    if oversample:
+        if dataset_1.num_rows < max_len:
+            num_repeats = max_len // dataset_1.num_rows
+            dataset_1 = datasets.concatenate_datasets([dataset_1] * num_repeats)
+        elif dataset_0.num_rows < max_len:
+            num_repeats = max_len // dataset_0.num_rows
+            dataset_0 = datasets.concatenate_datasets([dataset_0] * num_repeats)
+    else:
+        dataset_1 = dataset_1.shuffle(seed=wandb.config.seed).select(range(min_len))
+        dataset_0 = dataset_0.shuffle(seed=wandb.config.seed).select(range(min_len))
+    return datasets.concatenate_datasets([dataset_1, dataset_0])
+
+
 def get_datasets(args: Config, seed: int):
     # Load data features from cache or dataset file
     try:
@@ -116,9 +138,22 @@ def get_datasets(args: Config, seed: int):
         test_dataset = dataset["test"]
     except DatasetGenerationError:
         dataset = load_from_disk(args.dataset_name)
-        train_dataset = SquadDatasetFromDisk(base_dataest=dataset["train"], config=args)
-        test_dataset = SquadDatasetFromDisk(base_dataest=dataset["test"], config=args)
-
+        if args.mix_historical_runaways:
+            historical_dataset = load_from_disk(args.historical_dataset_name)
+            train_dataset = datasets.concatenate_datasets(
+                [dataset["train"], historical_dataset["train"]]
+            )
+            test_dataset = historical_dataset["test"]
+            dataset = {"train": train_dataset, "test": test_dataset}
+            
+    if args.balance_dataset:
+        print("balancing dataset")
+        print("before", dataset["train"].num_rows, dataset["test"].num_rows)
+        dataset["train"] = balance_dataset(dataset["train"])
+        dataset["test"] = balance_dataset(dataset["test"], oversample=False)
+        print("after", dataset["train"].num_rows, dataset["test"].num_rows)
+    train_dataset = SquadDatasetFromDisk(base_dataest=dataset["train"], config=args)
+    test_dataset = SquadDatasetFromDisk(base_dataest=dataset["test"], config=args)
     return train_dataset, test_dataset
 
 
@@ -189,8 +224,8 @@ def main(args: Config):
     def compute_metrics(p: EvalPrediction):
         def compute_single_acc(pred, label):
             summed = label + pred
-            if max(summed) == 0:
-                return 1.0
+            if max(label) == 0:
+                return -1.0  # no answer
             else:
                 num_missmatched = np.sum(summed == 1)
                 num_matched = np.sum(summed == 2) / 2
@@ -208,19 +243,45 @@ def main(args: Config):
 
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.argmax(preds, axis=2)
+        has_answer_in_pred = np.max(preds, axis=1)
+
         labels = p.label_ids
+        has_answer_in_label = np.max(labels, axis=1)
+        num_of_has_answer_in_label = np.sum(has_answer_in_label)
+        num_of_no_answer_in_label = (
+            len(has_answer_in_label) - num_of_has_answer_in_label
+        )
 
         accuracies = [compute_single_acc(p, l) for p, l in zip(preds, labels)]
+        accuracies_without_answer = [a for a in accuracies if a != -1.0]
+        accuracies_all = list(map(lambda x: 1.0 if x == -1.0 else x, accuracies))
+
         has_answer = np.mean(np.max(preds, axis=1))
+
         has_match = [compute_has_match(p, l) for p, l in zip(preds, labels)]
+
         false_negatives = [false_negative(p, l) for p, l in zip(preds, labels)]
         false_positives = [false_positive(p, l) for p, l in zip(preds, labels)]
         return {
-            "accuracy": np.mean(accuracies),
             "has_match": np.sum(has_match),
+            "true_positives_rate_with_match": np.sum(has_match)
+            / num_of_has_answer_in_label,
+            "true_positives_rate_binary": np.sum(
+                has_answer_in_pred + has_answer_in_label == 2
+            )
+            / num_of_has_answer_in_label,
+            "false_negatives_rate_binary": np.sum(false_negatives)
+            / num_of_has_answer_in_label,
+            "false_positives_rate_binary": np.sum(false_positives)
+            / num_of_no_answer_in_label,
+            "true_negative_rate_binary": np.sum(
+                has_answer_in_pred + has_answer_in_label == 0
+            )
+            / num_of_no_answer_in_label,
+            "accuracy_binary": np.mean(has_answer_in_pred == has_answer_in_label),
+            "accuracy": np.mean(accuracies_all),
+            "accuracy_without_answer": np.mean(accuracies_without_answer),
             "has_answer": has_answer,
-            "false_negatives": np.sum(false_negatives),
-            "false_positives": np.sum(false_positives),
             "num_samples": len(accuracies),
         }
 

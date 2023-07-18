@@ -14,6 +14,7 @@ from pixel_datasets.utils.utils import (
     get_mask_edges,
     convert_patch_mask_to_pixel_mask,
 )
+from pixel_datasets.utils.dataset_utils import generate_patch_mask
 from pixel_datasets.utils.squad_utils import (
     convert_pixel_mask_to_patch_mask,
 )
@@ -24,6 +25,9 @@ from pixel.utils.inference import (
     predict,
     parse_outputs,
     get_inference_font,
+    parse_squad_outputs,
+    predict_squad,
+    load_model_for_squad,
 )
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -32,7 +36,55 @@ import pickle
 import platform
 
 
-def random_masking():
+def load_real_scans(args, n=100):
+    visualization_dataset = load_dataset("Nadav/CaribbeanScans", split="test", cache_dir=args.dataset_cache_dir)
+    visualization_dataset = visualization_dataset.shuffle().select(range(n))
+    visualization_dataset = visualization_dataset.filter(lambda x: x["image"].size == (368, 368))
+    rng = np.random.RandomState(42)
+    visualization_examples = []
+    for sample in tqdm(visualization_dataset):
+        sample["patch_mask"] = generate_patch_mask(args, rng, (368, 368))[1]
+        sample["pixel_values"] = np.array(sample["image"])
+        visualization_examples.append(sample)
+    return visualization_examples
+
+
+def random_masking_real_samples(args, save_all_figs=False):
+    visualization_examples = load_real_scans(args, 16)
+
+    model = load_model_for_pretraining(
+        wandb.config,
+        "Nadav/Pixel-real-scans-v3",
+    )
+
+    predictions = []
+    for example in tqdm(visualization_examples):
+        outputs = predict(model, example["pixel_values"], example["patch_mask"])
+        prediction = parse_outputs(outputs, model, example["pixel_values"])
+        predictions.append(prediction)
+
+    for i in range(len(predictions)):
+        mask = visualization_examples[i]["patch_mask"]
+        pixel_mask = convert_patch_mask_to_pixel_mask(mask)
+        only_edges = get_mask_edges(pixel_mask, 3)
+        merged = merge_mask_with_image(
+            only_edges, np.array(predictions[i]), colour=(0, 0, 0), alpha=0.1
+        )
+        if save_all_figs:
+            original = Image.fromarray(visualization_examples[i]["pixel_values"])
+            pixel_mask = Image.fromarray((pixel_mask * 255).astype(np.uint8))
+            predicted = Image.fromarray(predictions[i]) 
+            merged_image = Image.fromarray(merged)
+            for name, im in zip(["original", "pixel_mask", "predicted", "merged"], [original, pixel_mask, predicted, merged_image]):
+                im.save(f"evaluations/sample_scans/real_scans_{i}_{name}.png")
+        
+        predictions[i] = merged
+
+    final = plot_arrays(predictions)
+    final.save("evaluations/completions_results/real_validation_samples.png")
+
+
+def random_masking(args):
     visualization_dataset = load_dataset("wikipedia", "20220301.simple", split="train")
     visualization_dataset = visualization_dataset.filter(
         lambda x: len(x["text"].split()) > 200
@@ -42,10 +94,6 @@ def random_masking():
     print(visualization_dataset[0])
 
     rng = np.random.RandomState(42)
-    wandb.init(
-        config="/home/knf792/PycharmProjects/pixel-2/configs/inference_config.yaml",
-        mode="disabled",
-    )
     transform = SyntheticDatasetTransform(wandb.config, rng=rng)
     simple_transform = SimpleTorchTransform(wandb.config, rng=rng)
 
@@ -88,6 +136,29 @@ def random_masking():
     final = plot_arrays(predictions)
     final.save("evaluations/final.png")
 
+
+def generate_single_mask_real_scans(args):
+    visualization_dataset = load_real_scans(args, n=64)
+    filtered_dataset = []
+    for sample in tqdm(visualization_dataset):
+        im = np.array(sample["pixel_values"])
+        try:
+            pixel_mask, ocred_image, random_word = mask_single_word_from_scan(im)
+        except ValueError:
+            continue
+        patch_mask = convert_pixel_mask_to_patch_mask(pixel_mask, 16, 0.3)
+        sample["patch_mask"] = (
+            torch.from_numpy(patch_mask).flatten().type(torch.float32)
+        )
+        sample["ocr"] = ocred_image
+        sample["random_word"] = random_word
+        filtered_dataset.append(sample)
+
+    pickle.dump(
+        filtered_dataset, open("evaluations/visualization_examples_real.pkl", "wb")
+    )
+    print("Saved visualization examples to disk")
+    
 
 def generate_single_mask_scans():
     visualization_dataset = load_dataset("wikipedia", "20220301.simple", split="train")
@@ -139,21 +210,27 @@ def mask_a_word(generate=False):
     if generate:
         generate_single_mask_scans()
     else:
-        visualization_examples = pickle.load(
-            open("evaluations/visualization_examples.pkl", "rb")
+        visualization_examples_all = pickle.load(
+            open("evaluations/visualization_examples_real.pkl", "rb")
         )
         model = load_model_for_pretraining(
             wandb.config,
-            "Nadav/PretrainedPHD-v3",
+            "Nadav/Pixel-real-scans-v3",
         )
         predictions = []
-        for example in tqdm(visualization_examples):
-            outputs = predict(model, example["pixel_values"], example["patch_mask"])
-            prediction = parse_outputs(outputs, model, example["pixel_values"])
-            predictions.append(prediction)
+        visualization_examples = []
+        for example in tqdm(visualization_examples_all):
+            try:
+                outputs = predict(model, example["pixel_values"], example["patch_mask"])
+                prediction = parse_outputs(outputs, model, example["pixel_values"])
+                predictions.append(prediction)
+                visualization_examples.append(example)
+            except ValueError:
+                continue
 
         for i in range(len(predictions)):
             mask = visualization_examples[i]["patch_mask"]
+            random_word = visualization_examples[i]["random_word"]
             mask = mask.numpy()
             pixel_mask = convert_patch_mask_to_pixel_mask(mask)
             only_edges = get_mask_edges(pixel_mask, 3)
@@ -161,15 +238,17 @@ def mask_a_word(generate=False):
                 only_edges, np.array(predictions[i]), colour=(0, 0, 0), alpha=0.1
             )
             predictions[i] = merged
-
+            merged = Image.fromarray(merged)
+            merged.save(f"evaluations/completions_results/real_scans_{random_word}.png")
+            
         final = plot_arrays(
             predictions,
             titles=[example["random_word"] for example in visualization_examples],
         )
-        final.save("evaluations/random_word.png")
+        final.save("evaluations/completions_results/random_words_real_scans.png")
 
 
-def save_dataset_samples(args):
+def save_synthetic_dataset_samples(args):
     """
     Saves a random sample of fake images from the dataset
     """
@@ -224,9 +303,33 @@ def save_dataset_samples(args):
     )
 
 
+def visualise_squad(args):
+    model = load_model_for_squad(args, "/projects/copenlu/data/nadav/pixel/pixel_squad_mixed_with_hist/checkpoint-2400/")
+    dataset = load_from_disk("/projects/copenlu/data/nadav/Datasets/runaways_visual/dataset")
+    dataset = dataset["test"]
+    dataset = dataset.shuffle()
+    dataset = dataset.filter(lambda x: np.max(x["label"]) == 1)
+
+    for i in tqdm(range(0, 32)):
+        instance = dataset[i]
+        image = np.asarray(instance["image"].copy().convert("RGB"))
+        label = np.array(instance["label"])
+        prediction = predict_squad(model, image)
+        parsed_predictions = parse_squad_outputs(prediction, image, label, method="saliency")
+        
+        pixel_mask = convert_patch_mask_to_pixel_mask(label)
+        only_edges = get_mask_edges(pixel_mask, 3)
+        merged = merge_mask_with_image(
+            only_edges, parsed_predictions, colour=(0, 0, 0), alpha=0.1
+        )
+        merged = Image.fromarray(merged.astype(np.uint8))
+        merged.save(f"evaluations/runaways/saliency_{i}.png")
+        
+
+
 if __name__ == "__main__":
     wandb.init(
-        config="/home/knf792/PycharmProjects/pixel-2/configs/pretraining_config.yaml",
+        config="/home/knf792/PycharmProjects/pixel-2/configs/inference_config.yaml",
         mode="disabled",
     )
-    save_dataset_samples(wandb.config)
+    random_masking_real_samples(wandb.config)

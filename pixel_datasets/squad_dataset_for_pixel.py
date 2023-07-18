@@ -287,7 +287,7 @@ class SquadDatasetForPixel(IterableDataset):
         self.attention_mask = self.image_generator.get_attention_mask(
             config.num_patches
         )
-        self.randomize_font = split == "train"
+        self.randomize_font = config.randomize_font
         self.test_font = font
 
     def set_epoch(self, epoch):

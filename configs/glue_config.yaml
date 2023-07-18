@@ -156,7 +156,7 @@ adaptive_num_patches:
 
 noisy_dataset:
   desc: whether to use a noisy version of the dataest or not
-  value: True
+  value: False
 dataset_cache_dir:
   desc: where to cache the datasets
   value: "/projects/copenlu/data/nadav/cache"
