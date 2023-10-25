@@ -73,6 +73,7 @@ def collate_fn(examples):
 
 
 def get_datasets(args: Config):
+    rng = np.random.RandomState(args.seed)
     train_text_datasets = [
         load_dataset(
             d_name,
@@ -87,7 +88,29 @@ def get_datasets(args: Config):
             args.train_splits,
         )
     ]
-    dataset_sizes = [ds._info.splits.total_num_examples for ds in train_text_datasets]
+    if args.generate_test_data_from_train:
+        test_text_datasets = []
+        for i in range(len(train_text_datasets)):
+            ds = train_text_datasets[i]
+            ds_size = len(ds)
+            test_size = ds_size // 500
+            random_test_indices = rng.choice(ds_size, test_size, replace=False)
+            random_train_indices = np.setdiff1d(np.arange(ds_size), random_test_indices)
+            test_text_datasets.append(ds.select(random_test_indices))
+            train_text_datasets[i] = ds.select(random_train_indices)
+            assert (
+                len(train_text_datasets[i]) + len(test_text_datasets[i]) == ds_size
+            ), "Dataset sizes don't add up: {} + {} != {}".format(
+                len(train_text_datasets[i]), len(test_text_datasets[i]), ds_size
+            )
+
+        test_text_dataset = datasets.concatenate_datasets(test_text_datasets)
+        test_text_dataset = test_text_dataset.shuffle(seed=args.seed)
+    else:
+        test_text_dataset = load_dataset("wikipedia", "20220301.simple")["train"]
+        test_text_dataset = test_text_dataset.shuffle(seed=args.seed)
+
+    dataset_sizes = [len(ds) for ds in train_text_datasets]
     combined_size = sum(dataset_sizes)
     dataset_sampling_probs = [d_size / combined_size for d_size in dataset_sizes]
     train_text_dataset = interleave_datasets(
@@ -95,7 +118,6 @@ def get_datasets(args: Config):
         probabilities=dataset_sampling_probs,
         seed=args.seed,
     )
-    rng = np.random.RandomState(args.seed)
     train_transform = SyntheticDatasetTransform(args, rng=rng)
     test_transform = SyntheticDatasetTransform(args, rng=rng)
 
@@ -105,9 +127,6 @@ def get_datasets(args: Config):
         transform=train_transform,
         rng=rng,
     )
-
-    test_text_dataset = load_dataset("wikipedia", "20220301.simple")["train"]
-    test_text_dataset = test_text_dataset.shuffle(seed=args.seed)
 
     test_dataset = PretrainingDataset(
         config=args,

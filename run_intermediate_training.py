@@ -279,7 +279,7 @@ def main(args: Config):
     )
 
     if args.do_eval and "wandb" in args.report_to:
-        logger.info(f"adding visualization callback")
+        logger.info("adding visualization callback")
         trainer.add_callback(VisualizationCallback(visualize_train=False))
 
     # Training

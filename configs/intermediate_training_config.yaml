@@ -27,7 +27,7 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/Pixel-real-scans-v3
+  value: Nadav/Pixel-real-scans-v5
 hub_strategy:
   desc: when to push to hub
   value: checkpoint
@@ -65,13 +65,13 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 86
+  value: 16
 per_device_eval_batch_size:
   desc: evaluation batch size
-  value: 32
+  value: 16
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
-  value: 1
+  value: 4
 base_learning_rate:
   desc: base learning rate
   value: 1.5e-4
@@ -86,7 +86,7 @@ evaluation_strategy:
   value: "steps"
 eval_steps:
   desc: frequency of model evaluation
-  value: 5000
+  value: 1000
 dataloader_num_workers:
   desc: number of dataset workers
   value: 32
@@ -94,25 +94,25 @@ dataloader_num_workers:
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v3"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v5"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: False
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v3"
+  value: "/projects/copenlu/data/nadav/pixel/intermediate_training_from_PretrainedPHD_v5"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
 logging_steps:
   desddc: logging frequency, in steps
-  value: 500
+  value: 5
 save_stategy:
   desc: save strategy of the trainer
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 5000
+  value: 2000
 report_to:
   desc: tool to report to
   value: ["wandb"]
@@ -126,7 +126,7 @@ model_config_name:
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD-v3
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v5/checkpoint-1800000"
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True

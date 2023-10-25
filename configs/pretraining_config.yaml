@@ -27,7 +27,7 @@ streaming:
   value: False
 hub_model_id:
   desc: model id on huggingface
-  value: Nadav/PretrainedPHD-v3
+  value: Nadav/PretrainedPHD-v5
 hub_strategy:
   desc: when to push to hub
   value: checkpoint
@@ -44,10 +44,7 @@ epochs:
   value: 1
 max_steps:
   desc: maxumim number of training steps
-  value: 200000
-squad_version:
-  desc: squad dataset version (1 or 2)
-  value: 1
+  value: 2000000
 seed:
   desc: random_seed
   value: 43
@@ -62,10 +59,10 @@ device:
   value: "cuda"
 per_device_train_batch_size:
   desc: training batch size
-  value: 86
+  value: 32
 per_device_eval_batch_size:
   desc: evaluation batch size
-  value: 32
+  value: 16
 gradient_accumulation_steps:
   desc: number of gradient accumulation steps
   value: 1
@@ -77,7 +74,7 @@ lr_scheduler_type:
   value: "cosine"
 warmup_ratio:
   desc: ratio used for warmup
-  value: 0
+  value: 0.1
 evaluation_strategy:
   desc: when to evaluate the model, in steps
   value: "steps"
@@ -91,25 +88,25 @@ dataloader_num_workers:
 # logging config
 output_dir:
   desc: where to save the output of the run
-  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v3"
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v5"
 overwrite_output_dir:
   desc: whether to overwrite the output dir
   value: False
 job_dir:
   desc: where to store wandb stuff
-  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v3"
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v5"
 logging_strategy:
   desc: logging strategy of the trainer
   value: "steps"
 logging_steps:
   desddc: logging frequency, in steps
-  value: 500
+  value: 1000
 save_stategy:
   desc: save strategy of the trainer
   value: steps
 save_steps:
   desc: frequencey of saving the model
-  value: 5000
+  value: 50000
 report_to:
   desc: tool to report to
   value: ["wandb"]
@@ -123,10 +120,10 @@ dropout_prob:
   value: 0.1
 model_config_name:
   desc: Pretrained config name or path if not the same as model_name_or_path
-  value: none
+  value: Nadav/PretrainedPHD
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD
+  value: none
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
@@ -165,6 +162,9 @@ number_of_labels:
   value: 1
 ignore_data_skip:
   desc: whether to ignore data skips when training using a checkpoint
+  value: True
+generate_test_data_from_train:
+  desc: whether to split the train dataset into train and test
   value: True
 
 # image generation settings
@@ -227,10 +227,10 @@ num_patches:
   value: 529
 random_font_probability:
   desc: probability to replace font mid scan
-  value: 0.8
+  value: 0.4
 random_snippet_probability:
   desc: whether to use a random snippet in concatenation, or the next one
-  value: 0.8
+  value: 0.1
 embed_real_image:
   desc: Whether to embed real images in white background
   value: False
@@ -286,16 +286,16 @@ random_line_vertical_probability:
   value: 0.1
 noise_probability:
   desc: probability of applying pixel level noise
-  value: 0.3
+  value: 0.4
 cloud_probability:
   desc: probability of adding random water damage to the figure
-  value: 0.3
+  value: 0.4
 blobs_probability:
   desc: probability of adding large black holes to the figure
-  value: 0.1
+  value: 0.3
 pepper_spots_probability:
   desc: probability of adding small black holes to the figure
-  value: 0.3
+  value: 0.4
 blur_max_sigma:
   desc: Maximum sigma of the gaussian blur
   value: 3
@@ -307,7 +307,7 @@ rotation_max_degrees:
   value: 5.0
 rotation_probability:
   desc: probability of applying rotation
-  value: 0.05
+  value: 0.1
 color_jitter_probability:
   desc: color_jitter_probability
   value: 0.05

@@ -2,7 +2,7 @@ from ..models.pixel.modeling_pixel import (
     PIXELForPreTraining,
     PIXELConfig,
     PIXELForSequenceClassification,
-    PIXELForTokenClassification
+    PIXELForTokenClassification,
 )
 import numpy as np
 import torch
@@ -11,6 +11,28 @@ from pixel_datasets.utils.dataset_utils import CustomFont
 from scipy import stats as st
 from skimage import data, color, transform
 import cv2
+from typing import Union, List
+from tqdm.auto import tqdm
+
+
+def preprocess_image(img):
+    if type(img) == Image.Image:
+        img = np.array(img)
+
+    if type(img) == np.ndarray:
+        img = img.astype(np.float32)
+        if img.max() > 1:
+            img = img / 255.0
+        if len(img.shape) == 4:
+            img = img[0]
+        img = np.transpose(img, (2, 0, 1))
+        img = torch.from_numpy(img)
+
+    elif type(img) == torch.Tensor:
+        if len(img.shape) == 4:
+            img = img.squeeze(0)
+
+    return img
 
 
 def load_model_for_pretraining(args, model_name):
@@ -197,11 +219,13 @@ def parse_squad_outputs(outputs, original_image, labels, method):
         mask = 1 / (1 + np.exp(-mask))
         mask = mask.reshape(23, 23)
         # mask = np.kron(mask, np.ones((16, 16)))
-        mask = transform.resize(mask, (original_image.shape[0], original_image.shape[1]))
+        mask = transform.resize(
+            mask, (original_image.shape[0], original_image.shape[1])
+        )
         heatmap = cv2.applyColorMap((mask * 255).astype("uint8"), cv2.COLORMAP_JET)
         heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
         merged = cv2.addWeighted(original_image.astype("uint8"), 0.5, heatmap, 0.5, 0)
-        
+
         return merged
 
 
@@ -219,37 +243,70 @@ def calculate_num_patches(image):
     return num_patches
 
 
-def encode_image(model: PIXELForSequenceClassification, image):
-    if type(image) == Image.Image:
-        image = np.array(image)
+def encode_images(
+    model: PIXELForSequenceClassification,
+    image: Union[
+        Image.Image,
+        np.ndarray,
+        torch.Tensor,
+        List[Union[Image.Image, np.ndarray, torch.Tensor]],
+    ],
+    batch_size: int = 16,
+):
+    """
+    This function encodes an image or a list of images into a 768-dimensional vector or a matrix of vectors using the model.
+    """
+    # If the input is a single image, wrap it in a list if type(image) in [Image.Image, np.ndarray, torch.Tensor]:
+    if type(image) not in [list, tuple]:
+        image = [image]
+    # Initialize an empty list to store the images
+    images = []
+    # Loop over each image in the list
+    for img in image:
+        # Append the image to the list
+        img = preprocess_image(img)
+        images.append(img)
 
-    if type(image) == np.ndarray:
-        image = np.expand_dims(image, axis=0).astype(np.float32)
-        if image.max() > 1:
-            image = image / 255.0
-        image = np.transpose(image, (0, 3, 1, 2))
-        image = torch.from_numpy(image)
-
-    elif type(image) == torch.Tensor:
-        image = image.unsqueeze(0)
+    # Convert the list of images to a tensor
+    images = torch.stack(images)
 
     num_patches = 529
     attention_mask = get_attention_mask(num_patches)
-    attention_mask = torch.unsqueeze(attention_mask, 0)
-
-    image = image.to(model.device)
-    attention_mask = attention_mask.to(model.device)
+    attention_mask = attention_mask.repeat(len(images), 1)
 
     model.eval()
-    outputs = model.vit(pixel_values=image, attention_mask=attention_mask)
-    if model.add_cls_pooling_layer:
-        sequence_output = outputs[1]
-    else:
-        # When not using CLS pooling mode, discard it
-        sequence_output = outputs[0][:, 1:, :]
-    logits = model.pooler(sequence_output, attention_mask)
+    model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
 
-    embeddings = logits.detach().cpu().squeeze().numpy()
+    # Initialize an empty list to store the embeddings
+    embeddings = []
+
+    # Loop over the images in batches
+    for i in range(0, len(images), batch_size):
+        # Get the current batch of images and attention masks
+        batch_images = images[i : i + batch_size]
+        batch_attention_masks = attention_mask[i : i + batch_size]
+
+        # Send the batch to the device
+        batch_images = batch_images.to(model.device)
+        batch_attention_masks = batch_attention_masks.to(model.device)
+
+        # Get the model outputs
+        outputs = model.vit(
+            pixel_values=batch_images, attention_mask=batch_attention_masks
+        )
+        if model.add_cls_pooling_layer:
+            sequence_output = outputs[1]
+        else:
+            # When not using CLS pooling mode, discard it
+            sequence_output = outputs[0][:, 1:, :]
+        logits = torch.mean(sequence_output, dim=1)
+
+        # Get the embeddings and append them to the list
+        batch_embeddings = logits.detach().cpu().numpy()
+        embeddings.append(batch_embeddings)
+
+    # Concatenate the list of embeddings to a numpy array
+    embeddings = np.concatenate(embeddings)
 
     return embeddings
 

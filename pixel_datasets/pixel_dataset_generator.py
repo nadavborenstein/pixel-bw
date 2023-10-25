@@ -313,10 +313,10 @@ class PretrainingDataset(IterableDataset):
         snippet, next_snippets = self._get_random_snippet()
         image, font = self.image_generator.generate(snippet)
         while self.image_generator.check_if_can_concatenate(image):
-            if self.rng.rand() > self.config.random_font_probability:
+            if self.rng.rand() <= self.config.random_font_probability:
                 font = None
             if (
-                self.rng.rand() > self.config.random_snippet_probability
+                self.rng.rand() <= self.config.random_snippet_probability
                 or len(next_snippets) == 0
             ):
                 snippet_2, next_snippets = self._get_random_snippet(
@@ -355,4 +355,3 @@ class PretrainingDataset(IterableDataset):
             }
             self._update_steps()
             yield inputs
-

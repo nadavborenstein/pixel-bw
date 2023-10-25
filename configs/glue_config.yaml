@@ -138,7 +138,7 @@ model_config_name:
   value: none
 model_name_or_path:
   desc: The model checkpoint for weights initialization. Don't set if you want to train a model from scratch.
-  value: Nadav/PretrainedPHD-v3
+  value: "/projects/copenlu/data/nadav/pixel/PretarinedPHD_v5/checkpoint-1800000"
 norm_pix_loss:
   desc: Whether or not to train with normalized pixel values as target.
   value: True
